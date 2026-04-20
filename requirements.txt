@@ -1,2 +1,5 @@
-pandas
-
+pandas==3.0.2
+os
+pathlib
+kagglehub==1.0.0
+json==2.0.9
