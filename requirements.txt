@@ -1,2 +1,4 @@
 pandas==3.0.2
 kagglehub==1.0.0
+kaggle==
+python-dotenv
