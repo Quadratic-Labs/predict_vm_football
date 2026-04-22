@@ -1,0 +1,8 @@
+# Fichiers de données volumineux
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.json
+.env
+all_events_combined.csv
