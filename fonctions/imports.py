@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
 from git import Repo
 import pandas as pd
+import json
+from pathlib import Path
+import pyarrow
 
 def download_kaggle_dataset(dataset_query, destination_folder):
     """
@@ -87,3 +90,54 @@ def download_football_data_datasets(seasons, leagues) :
     # On enregistre le fichier à cet endroit
     full_data.to_csv(output_path, index=False)
     print("Téléchargement terminé !")
+
+
+
+
+
+
+
+
+
+
+def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name, record_path=None, meta=None, columns_to_keep=None):
+    """
+    Compile des fichiers JSON StatsBomb (recherche récursive dans les sous-dossiers).
+    """
+    json_folder = Path(json_folder_path)
+    output_folder = Path(output_folder_path)
+    
+    # Utilisation de rglob pour aller chercher dans tous les sous-dossiers
+    json_files = list(json_folder.rglob("*.json"))
+    
+    if not json_files:
+        print(f"⚠️ Aucun fichier JSON trouvé dans {json_folder_path} (même dans les sous-dossiers)")
+        return
+
+    output_folder.mkdir(parents=True, exist_ok=True)
+    output_path = output_folder / f"{output_name}.feather"
+
+    all_dfs = []
+    print(f"🔄 Traitement de {len(json_files)} fichiers trouvés dans {json_folder.name}...")
+
+    for file_path in json_files:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        df = pd.json_normalize(data, record_path=record_path, meta=meta, errors='ignore')
+        
+        if 'match_id' not in df.columns:
+            df['match_id'] = file_path.stem
+
+        if columns_to_keep:
+            cols = [c for c in columns_to_keep if c in df.columns]
+            df = df[cols].copy()
+        
+        all_dfs.append(df)
+
+    print(f"📊 Fusion et sauvegarde...")
+    final_df = pd.concat(all_dfs, ignore_index=True)
+    final_df.columns = final_df.columns.astype(str)
+    
+    final_df.to_feather(output_path)
+    print(f"✅ Terminé ! Fichier : {output_path.name} ({len(final_df)} lignes)")
