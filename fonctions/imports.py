@@ -1,19 +1,10 @@
+# Fichier utile pour l'import des données issues de plateformes différentes
+
 import os
 from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
 from git import Repo
 import pandas as pd
-
-# On charge son identifiant et une clé Kaggle dans le but de s'identifier et utiliser
-# l'API Kaggle
-load_dotenv(dotenv_path="../.env")
-
-# On définit les variables d'environnement attendues par l'API Kaggle
-os.environ['KAGGLE_USERNAME'] = os.getenv('KAGGLE_USERNAME')
-os.environ['KAGGLE_KEY'] = os.getenv('KAGGLE_API_TOKEN') 
-
-# On se connecte à l'API Kaggle
-api = KaggleApi()
 
 def download_kaggle_dataset(dataset_query, destination_folder):
     """
