@@ -95,11 +95,6 @@ def download_football_data_datasets(seasons, leagues) :
 
 
 
-
-
-
-
-
 def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name, record_path=None, meta=None, columns_to_keep=None):
     """
     Compile des fichiers JSON StatsBomb (recherche récursive dans les sous-dossiers).
@@ -111,14 +106,14 @@ def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_na
     json_files = list(json_folder.rglob("*.json"))
     
     if not json_files:
-        print(f"⚠️ Aucun fichier JSON trouvé dans {json_folder_path} (même dans les sous-dossiers)")
+        print(f"Aucun fichier JSON trouvé dans {json_folder_path} (même dans les sous-dossiers)")
         return
 
     output_folder.mkdir(parents=True, exist_ok=True)
     output_path = output_folder / f"{output_name}.feather"
 
     all_dfs = []
-    print(f"🔄 Traitement de {len(json_files)} fichiers trouvés dans {json_folder.name}...")
+    print(f"Traitement de {len(json_files)} fichiers trouvés dans {json_folder.name}...")
 
     for file_path in json_files:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -135,9 +130,9 @@ def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_na
         
         all_dfs.append(df)
 
-    print(f"📊 Fusion et sauvegarde...")
+    print(f"Fusion et sauvegarde...")
     final_df = pd.concat(all_dfs, ignore_index=True)
     final_df.columns = final_df.columns.astype(str)
     
     final_df.to_feather(output_path)
-    print(f"✅ Terminé ! Fichier : {output_path.name} ({len(final_df)} lignes)")
+    print(f"Terminé ! Fichier : {output_path.name} ({len(final_df)} lignes)")
