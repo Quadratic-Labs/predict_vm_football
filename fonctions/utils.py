@@ -36,8 +36,6 @@ def nombre_NA_par_fichier(path):
 
 
 
-import pandas as pd
-from pathlib import Path
 
 def analyze_missing_data(folder_path, threshold=10):
     """
@@ -106,72 +104,230 @@ def analyze_missing_data(folder_path, threshold=10):
 
 
 
-def analyze_fuzzy_duplicates(folder_path, similarity_threshold=0.6):
+
+
+
+
+
+
+
+
+def analyze_fuzzy_duplicates_fast(folder_path, threshold=0.8, window=5):
     """
-    Analyse les doublons partiels dans les fichiers CSV et Feather.
-    Un doublon est détecté si deux lignes partagent au moins 'similarity_threshold' % de colonnes identiques.
+    Détecte les doublons partiels rapidement.
+    Compare chaque ligne avec les 'window' lignes suivantes après tri.
     """
     folder = Path(folder_path)
-    summary_duplicates = []
-
     files = list(folder.glob("*.csv")) + list(folder.glob("*.feather"))
     
     if not files:
         print(f"Aucun fichier trouvé dans {folder_path}")
-        return None
+        return
+
+    print(f"\nAnalyse floue rapide (Seuil: {threshold*100}%, Voisinage: {window})")
+    print("-" * 75)
+    print(f"{'Fichier':<35} | {'Lignes':<8} | {'Doublons':<8} | {'Taux %':<8}")
+    print("-" * 75)
 
     for file in files:
-        # Lecture
+        df = pd.read_csv(file) if file.suffix == '.csv' else pd.read_feather(file)
+        
+        if len(df) <= 1:
+            continue
+
+        # On trie pour rapprocher les doublons potentiels
+        # (On prend les 3 premières colonnes pour le tri par défaut)
+        df = df.sort_values(by=list(df.columns[:3])).reset_index(drop=True)
+        
+        values = df.values
+        n_rows, n_cols = values.shape
+        req_matches = int(threshold * n_cols)
+        is_duplicate = np.zeros(n_rows, dtype=bool)
+
+        # On ne compare que dans un petit voisinage (window)
+        for i in range(n_rows):
+            if is_duplicate[i]: continue
+            
+            # Comparaison limitée aux 'window' lignes suivantes
+            end_idx = min(i + 1 + window, n_rows)
+            if i + 1 >= end_idx: continue
+            
+            matches = np.sum(values[i] == values[i+1 : end_idx], axis=1)
+            dup_indices = np.where(matches >= req_matches)[0] + (i + 1)
+            
+            if len(dup_indices) > 0:
+                is_duplicate[dup_indices] = True
+        
+        n_dup = np.sum(is_duplicate)
+        rate = (n_dup / n_rows) * 100
+        print(f"{file.name:<35} | {n_rows:<8} | {n_dup:<8} | {rate:>6.2f}%")
+
+    print("-" * 75)
+
+
+
+
+
+
+
+
+def analyze_temporal_coverage(folder_path):
+    """
+    Analyse les colonnes de type 'date' pour chaque fichier CSV et Feather.
+    Affiche la date de début (min) et de fin (max) pour chaque colonne identifiée.
+    """
+    folder = Path(folder_path)
+    files = list(folder.glob("*.csv")) + list(folder.glob("*.feather"))
+    
+    if not files:
+        print(f"Aucun fichier trouvé dans {folder_path}")
+        return
+
+    print(f"\nCouverture temporelle des datasets")
+    print("-" * 60)
+
+    for file in files:
+        # Lecture adaptée
         if file.suffix == '.csv':
             df = pd.read_csv(file)
         else:
             df = pd.read_feather(file)
             
-        total_rows = len(df)
-        if total_rows <= 1:
-            summary_duplicates.append({
-                "fichier": file.name, "lignes": total_rows, "doublons_partiels": 0, "taux_%": 0
-            })
+        # Détection des colonnes contenant "date" dans leur nom
+        date_cols = [col for col in df.columns if "date" in col.lower()]
+        
+        if not date_cols:
             continue
-
-        # --- Logique de détection de doublons partiels ---
-        # On convertit le DF en matrice de valeurs
-        values = df.values
-        n_rows, n_cols = values.shape
-        
-        # Seuil de colonnes identiques nécessaires
-        required_matches = int(similarity_threshold * n_cols)
-        
-        duplicates_count = 0
-        is_duplicate = np.zeros(n_rows, dtype=bool)
-
-        # Comparaison ligne à ligne optimisée (attention : lent sur de très gros fichiers)
-        for i in range(n_rows):
-            if is_duplicate[i]: continue
             
-            # On compare la ligne i avec toutes les lignes suivantes
-            # On compte combien de colonnes sont égales (en gérant les NaN)
-            matches = np.sum(values[i] == values[i+1:], axis=1)
-            
-            # On identifie les indices des lignes qui dépassent le seuil
-            dup_indices = np.where(matches >= required_matches)[0] + (i + 1)
-            
-            if len(dup_indices) > 0:
-                is_duplicate[dup_indices] = True
+        print(f"\n{file.name}")
         
-        n_duplicates = np.sum(is_duplicate)
-        dup_rate = (n_duplicates / total_rows) * 100
-        
-        summary_duplicates.append({
-            "fichier": file.name,
-            "lignes": total_rows,
-            "doublons_partiels": n_duplicates,
-            "taux_doublons_%": round(dup_rate, 2)
-        })
+        for col in date_cols:
+            # Conversion en datetime (coerce transforme les erreurs en NaT)
+            # On utilise copy() pour éviter les warnings de Pandas
+            temp_dates = pd.to_datetime(df[col], errors="coerce")
+            
+            # Suppression des NaT pour le calcul
+            temp_dates = temp_dates.dropna()
+            
+            if not temp_dates.empty:
+                min_date = temp_dates.min().strftime('%d/%m/%Y')
+                max_date = temp_dates.max().strftime('%d/%m/%Y')
+                print(f"   • {col:<20} : {min_date} ➔ {max_date}")
+            else:
+                print(f"   • {col:<20} : Aucune date valide trouvée")
 
-    result_dup = pd.DataFrame(summary_duplicates).sort_values(by="taux_doublons_%", ascending=False)
+    print("-" * 60)
+
+
+
+
+
+
+
+
+def analyze_seasonal_coverage(folder_path):
+    """
+    Analyse la répartition des observations par saison (Juillet à Juin).
+    Compatible CSV et Feather.
+    """
+    folder = Path(folder_path)
+    files = list(folder.glob("*.csv")) + list(folder.glob("*.feather"))
     
-    print(f"\nAnalyse des doublons partiels (Seuil: {similarity_threshold*100}%) :\n")
-    print(result_dup.to_string(index=False))
+    if not files:
+        print(f"Aucun fichier trouvé dans {folder_path}")
+        return
+
+    print(f"\nRépartition par Saisons (01/07 au 30/06)")
+    print("-" * 60)
+
+    for file in files:
+        # Lecture
+        df = pd.read_csv(file) if file.suffix == '.csv' else pd.read_feather(file)
+        
+        # Identification des colonnes dates
+        date_cols = [col for col in df.columns if "date" in col.lower()]
+        
+        if not date_cols:
+            continue
+            
+        print(f"\nFichier: {file.name}")
+        
+        for col in date_cols:
+            # Conversion en datetime
+            dates = pd.to_datetime(df[col], errors="coerce").dropna()
+            
+            if dates.empty:
+                continue
+
+            # LOGIQUE DE SAISON : 
+            # Si le mois est >= 7 (Juillet), la saison est Année / Année+1
+            # Si le mois est < 7 (Janv-Juin), la saison est Année-1 / Année
+            def get_season(d):
+                year = d.year
+                if d.month >= 7:
+                    return f"{year}/{year+1}"
+                else:
+                    return f"{year-1}/{year}"
+
+            # Application de la fonction
+            seasons = dates.apply(get_season)
+            
+            # Affichage des résultats triés par saison
+            counts = seasons.value_counts().sort_index()
+            print(f"  Colonne: {col}")
+            for season, count in counts.items():
+                print(f"    • {season} : {count} observations")
+
+    print("-" * 60)
+
+
+
+
+
+
+
+def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
+    """
+    Se connecte à l'API Kaggle et récupère la date de dernière mise à jour 
+    d'un dataset spécifique passé en argument.
+    """
+    # 1. Chargement des identifiants
+    load_dotenv(dotenv_path=env_path)
     
-    return result_dup
+    username = os.getenv('KAGGLE_USERNAME')
+    api_token = os.getenv('KAGGLE_API_TOKEN')
+
+    if not username or not api_token:
+        print("Erreur : Identifiants Kaggle manquants dans le fichier .env")
+        return None
+
+    os.environ['KAGGLE_USERNAME'] = username
+    os.environ['KAGGLE_API_TOKEN'] = api_token
+
+    # 2. Authentification
+    try:
+        api = KaggleApi()
+    except Exception as e:
+        print(f"Erreur d'authentification Kaggle : {e}")
+        return None
+
+    # 3. Recherche du dataset exact
+    # On utilise l'API pour l'affichage de la fiche du dataset
+    try:
+        datasets = api.dataset_list(search=dataset_query)
+        
+        for ds in datasets:
+            if ds.ref == dataset_query:
+                # Récupération de la date (gestion des noms d'attributs)
+                date_maj = getattr(ds, 'lastUpdated', None) or getattr(ds, 'last_updated', "Date inconnue")
+                
+                print(f"Dataset trouvé : {ds.ref}")
+                print(f"Dernière mise à jour : {date_maj}")
+                return date_maj
+
+        print(f"Dataset '{dataset_query}' non trouvé sur Kaggle.")
+        return None
+        
+    except Exception as e:
+        print(f"Erreur lors de la recherche du dataset : {e}")
+        return None
