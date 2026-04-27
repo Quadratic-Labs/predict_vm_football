@@ -95,20 +95,23 @@ def download_football_data_datasets(seasons, leagues) :
 
 
 
-def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name, record_path=None, meta=None, columns_to_keep=None):
+def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name, record_path=None, meta=None, columns_to_keep=None, recursive=False):
     """
     Compile des fichiers JSON StatsBomb (recherche récursive dans les sous-dossiers).
     """
     json_folder = Path(json_folder_path)
     output_folder = Path(output_folder_path)
     
-    # Utilisation de rglob pour aller chercher dans tous les sous-dossiers
-    json_files = list(json_folder.rglob("*.json"))
+    if recursive:
+        json_files = list(json_folder.rglob("*.json"))
+    else:
+        json_files = list(json_folder.glob("*.json"))
     
     if not json_files:
-        print(f"Aucun fichier JSON trouvé dans {json_folder_path} (même dans les sous-dossiers)")
+        msg = "dans les sous-dossiers" if recursive else "à la racine"
+        print(f"Aucun fichier JSON trouvé {msg} dans {json_folder_path}")
         return
-
+    
     output_folder.mkdir(parents=True, exist_ok=True)
     output_path = output_folder / f"{output_name}.feather"
 
