@@ -9,7 +9,9 @@ from datetime import datetime
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import unicodedata
+
 
 
 
@@ -161,7 +163,7 @@ def check_all_missing_values(df, title="Valeurs manquantes par colonne"):
     missing_pct = missing_pct[missing_pct > 0].sort_values(ascending=False)
 
     if missing_pct.empty:
-        print(f"✅ Aucune valeur manquante détectée dans le dataset : {title}")
+        print(f"Aucune valeur manquante détectée dans le dataset : {title}")
         return
 
     plt.figure(figsize=(15, 6))
@@ -220,8 +222,6 @@ def get_latest_player_valuations(df_valuations, plot_freshness=True):
 
 
 
-import pandas as pd
-import matplotlib.pyplot as plt
 
 def filter_valuation_freshness(df_latest_values, threshold_date='2025-10-01', plot_confirmation=True):
     """
@@ -245,7 +245,7 @@ def filter_valuation_freshness(df_latest_values, threshold_date='2025-10-01', pl
     df_filtered = df_latest_values[df_latest_values['date'] >= date_seuil].copy()
     
     # 3. Bilan du filtrage
-    print(f"🧹 Filtre de fraîcheur appliqué (Seuil : {threshold_date}) :")
+    print(f"Filtre de fraîcheur appliqué (Seuil : {threshold_date}) :")
     print(f"- Joueurs conservés : {len(df_filtered)}")
     print(f"- Joueurs écartés (données trop anciennes) : {len(df_latest_values) - len(df_filtered)}")
     print(f"- Plage finale : du {df_filtered['date'].min().date()} au {df_filtered['date'].max().date()}")
@@ -289,9 +289,7 @@ def detect_outliers_zscore(df, column):
 
 
 
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+
 
 def plot_outliers_jitter(df, column, outliers_df):
     data = df[column].dropna()
@@ -387,10 +385,10 @@ def check_player_duplicates(df_players):
     duplicates = df_players[df_players.duplicated(subset=['name', 'date_of_birth'], keep=False)]
     
     if not duplicates.empty:
-        print(f"⚠️ {len(duplicates)} doublons potentiels détectés (même nom et date de naissance).")
+        print(f"{len(duplicates)} doublons potentiels détectés (même nom et date de naissance).")
         return duplicates.sort_values(by='name')
     else:
-        print("✅ Aucun doublon de joueur détecté sur le combo Nom/Date de naissance.")
+        print("Aucun doublon de joueur détecté sur le combo Nom/Date de naissance.")
         return None
 
 
@@ -416,17 +414,17 @@ def check_referential_integrity(df_players, df_valuations):
     orphans = ids_in_valuations - ids_in_players
 
     # 3. Affichage du bilan d'intégrité
-    print(f"🔍 Analyse de l'intégrité référentielle :")
+    print(f"Analyse de l'intégrité référentielle :")
     print(f"- Joueurs dans le fichier Profil : {len(ids_in_players)}")
     print(f"- Joueurs dans le fichier Valuations : {len(ids_in_valuations)}")
     print("-" * 40)
 
     if orphans:
-        print(f"⚠️  ALERTE : {len(orphans)} joueurs ont des prix mais n'ont pas de profil.")
-        print(f"👉 Ces prix seront perdus lors de la jointure (Merge).")
+        print(f"ALERTE : {len(orphans)} joueurs ont des prix mais n'ont pas de profil.")
+        print(f"Ces prix seront perdus lors de la jointure (Merge).")
         print(f"Exemples d'IDs orphelins : {list(orphans)[:5]}")
     else:
-        print("✅ INTÉGRITÉ PARFAITE : Tous les prix sont reliés à un profil joueur.")
+        print("INTÉGRITÉ PARFAITE : Tous les prix sont reliés à un profil joueur.")
     
     return orphans
 
@@ -475,7 +473,7 @@ def process_market_data(df_players, df_valuations, threshold_date='2025-10-01', 
     df_final = df_final.drop(columns=[c for c in cols_to_drop if c in df_final.columns])
 
     # --- 5. BILAN ---
-    print("✅ PIPELINE DE VALORISATION TERMINÉ")
+    print("PIPELINE DE VALORISATION TERMINÉ")
     print(f"- Joueurs conservés : {len(df_final)}")
     print(f"- Valeur min : {df_final[col_prix].min():,.0f} €")
     print(f"- Plage temporelle : du {df_final['date'].min().date()} au {df_final['date'].max().date()}")
@@ -524,7 +522,7 @@ def process_fbref_performance(df_fbref, min_minutes_played=450):
         std_low = df_val[df_val['Min'] < min_minutes_played]['Gls_90'].std()
         std_high = df_val[df_val['Min'] >= min_minutes_played]['Gls_90'].std()
         noise_red = ((std_low - std_high) / std_low) * 100
-        print(f"📊 Preuve mathématique : Réduction du bruit de {noise_red:.1f}%")
+        print(f"Preuve mathématique : Réduction du bruit de {noise_red:.1f}%")
 
     # --- 2. FILTRAGE ET SÉPARATION ---
     # Filtrage de représentativité
@@ -535,7 +533,7 @@ def process_fbref_performance(df_fbref, min_minutes_played=450):
     df_keepers = df_rep[df_rep['Pos'].str.contains('GK', na=False)].copy()
     
     # --- 3. BILAN ---
-    print(f"✅ FILTRAGE TERMINÉ")
+    print(f"FILTRAGE TERMINÉ")
     print(f"- Joueurs initiaux : {len(df_fbref)}")
     print(f"- Joueurs conservés : {len(df_rep)} (Soit {len(df_field)} joueurs de champ)")
     
@@ -543,9 +541,7 @@ def process_fbref_performance(df_fbref, min_minutes_played=450):
 
 
 
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 
 def prune_fbref_columns(df_input, threshold=0.80, verbose=True):
     """
@@ -593,7 +589,7 @@ def prune_fbref_columns(df_input, threshold=0.80, verbose=True):
     df_final = df_clean.drop(columns=cols_redundant)
 
     if verbose:
-        print(f"✅ ÉLAGAGE DES VARIABLES TERMINÉ")
+        print(f"ÉLAGAGE DES VARIABLES TERMINÉ")
         print(f"---------------------------------------------------")
         print(f"- Colonnes initiales : {initial_cols}")
         print(f"- Supprimées (> {int(threshold*100)}% NA) : {len(cols_to_drop_na)}")
@@ -605,7 +601,6 @@ def prune_fbref_columns(df_input, threshold=0.80, verbose=True):
 
 
 
-import pandas as pd
 
 def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
     """
@@ -620,7 +615,7 @@ def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
     nb_duplicates_initial = len(df) - df[player_col].nunique()
 
     if players_with_dup:
-        print(f"🔍 Joueurs avec plusieurs lignes (transferts/doublons) : {len(players_with_dup)}")
+        print(f"Joueurs avec plusieurs lignes (transferts/doublons) : {len(players_with_dup)}")
     
     # 2. Résolution : Tri par joueur puis par la métrique (Minutes) décroissante
     # On garde la ligne "first" qui sera celle avec le max de minutes
@@ -628,7 +623,7 @@ def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
     df_unique = df_unique.drop_duplicates(subset=[player_col], keep='first')
     
     # 3. Bilan
-    print(f"📊 Bilan de l'unicité :")
+    print(f"Bilan de l'unicité :")
     print(f"- Lignes traitées : {len(df)}")
     print(f"- Lignes après dédoublonnage : {len(df_unique)}")
     print(f"- 'Doublons de transfert' supprimés : {nb_duplicates_initial}")
@@ -639,7 +634,6 @@ def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
 
 
 
-import pandas as pd
 
 def normalize_fbref_formats(df_input):
     """
@@ -662,7 +656,7 @@ def normalize_fbref_formats(df_input):
     num_cols = df.select_dtypes(include=['float64', 'int64']).columns
     df[num_cols] = df[num_cols].fillna(0)
     
-    print(f"📊 Normalisation des formats terminée.")
+    print(f"Normalisation des formats terminée.")
     print(f"- Colonnes numériques imputées : {len(num_cols)}")
     print(f"- Valeurs manquantes totales restantes : {df.isnull().sum().sum()}")
     
@@ -672,9 +666,7 @@ def normalize_fbref_formats(df_input):
 
 
 
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 
 def audit_fbref_outliers(df, metrics=['Gls', 'Ast', 'Sh/90', 'Age'], top_n=5):
     """
@@ -691,7 +683,7 @@ def audit_fbref_outliers(df, metrics=['Gls', 'Ast', 'Sh/90', 'Age'], top_n=5):
             plt.title(f'Distribution de : {metric}', fontsize=12)
             plt.grid(axis='x', alpha=0.3)
         else:
-            print(f"⚠️ La métrique '{metric}' est absente du DataFrame.")
+            print(f"La métrique '{metric}' est absente du DataFrame.")
 
     plt.tight_layout()
     plt.show()
@@ -699,7 +691,7 @@ def audit_fbref_outliers(df, metrics=['Gls', 'Ast', 'Sh/90', 'Age'], top_n=5):
     # 2. Identification des cas extrêmes (sur la première métrique, souvent les buts)
     primary_metric = metrics[0]
     if primary_metric in df.columns:
-        print(f"⚽ Top {top_n} 'Outliers' Performance ({primary_metric}) :")
+        print(f"Top {top_n} 'Outliers' Performance ({primary_metric}) :")
         top_players = df[['Player', 'Squad', primary_metric, 'Min']].sort_values(by=primary_metric, ascending=False).head(top_n)
         print(top_players)
         print("-" * 40)
@@ -709,8 +701,7 @@ def audit_fbref_outliers(df, metrics=['Gls', 'Ast', 'Sh/90', 'Age'], top_n=5):
 
 
 
-import pandas as pd
-import requests
+
 
 def check_football_data_updates(season="2526"):
     """
@@ -727,7 +718,7 @@ def check_football_data_updates(season="2526"):
 
     updates = []
     
-    print(f"📡 Vérification des mises à jour (Saison {season})...\n")
+    print(f"Vérification des mises à jour (Saison {season})...\n")
 
     for code, name in leagues.items():
         url = f"https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
@@ -756,7 +747,7 @@ def check_football_data_updates(season="2526"):
 
 
 
-import pandas as pd
+
 
 def process_football_data(df_raw):
     """
@@ -776,7 +767,7 @@ def process_football_data(df_raw):
     df = df.dropna(subset=['FTHG', 'FTAG'])
     
     # 4. Affichage de l'Audit
-    print(f"📊 Audit Football-Data :")
+    print(f"Audit Football-Data :")
     print(f"- Nombre de colonnes initiales : {df_raw.shape[1]}")
     print(f"- Nombre de colonnes après élagage : {df.shape[1]}")
     print(f"- Matchs validés : {len(df)}")
@@ -787,7 +778,7 @@ def process_football_data(df_raw):
 
 
 
-import pandas as pd
+
 
 def audit_data_quality(df, subset_duplicates=['Date', 'HomeTeam', 'AwayTeam']):
     """
@@ -803,17 +794,17 @@ def audit_data_quality(df, subset_duplicates=['Date', 'HomeTeam', 'AwayTeam']):
     na_only.columns = ['Variable', 'Nombre de NA']
     
     # 3. Affichage
-    print(f"🔍 ANALYSE QUALITÉ :")
+    print(f"ANALYSE QUALITÉ :")
     print(f"-------------------------------")
     print(f"• Doublons détectés : {dup_count}")
     print(f"-------------------------------")
     
     if len(na_only) > 0:
-        print("⚠️ Colonnes avec données manquantes :")
+        print("Colonnes avec données manquantes :")
         # On affiche le tableau proprement
         print(na_only.to_string(index=False))
     else:
-        print("✅ Aucune valeur manquante détectée dans le dataset.")
+        print("Aucune valeur manquante détectée dans le dataset.")
         
     print("-" * 31)
     
@@ -821,7 +812,8 @@ def audit_data_quality(df, subset_duplicates=['Date', 'HomeTeam', 'AwayTeam']):
 
 
 
-import pandas as pd
+
+
 
 def audit_football_data_coherence(df):
     """
@@ -858,7 +850,7 @@ def audit_football_data_coherence(df):
     match_duplicates = df.duplicated(subset=dup_cols).sum()
 
     # --- AFFICHAGE DU BILAN ---
-    print(f"✅ Audit de cohérence terminé :")
+    print(f"Audit de cohérence terminé :")
     print(f"-------------------------------------------")
     print(f"• Erreurs de score (négatifs)  : {len(invalid_scores)}")
     print(f"• Erreurs de résultat (FTR)    : {total_res_errors}")
@@ -867,9 +859,9 @@ def audit_football_data_coherence(df):
     print(f"-------------------------------------------")
     
     if (len(invalid_scores) + total_res_errors + odd_error_count + match_duplicates) == 0:
-        print("💎 Intégrité des données : PARFAITE")
+        print("Intégrité des données : PARFAITE")
     else:
-        print("⚠️ Des anomalies ont été détectées. Vérifiez votre source.")
+        print("Des anomalies ont été détectées. Vérifiez votre source.")
 
     return {
         "score_errors": len(invalid_scores),
@@ -881,7 +873,8 @@ def audit_football_data_coherence(df):
 
 
 
-import pandas as pd
+
+
 
 def check_temporal_coverage(df, date_col):
     """
@@ -889,7 +882,7 @@ def check_temporal_coverage(df, date_col):
     Utile pour vérifier la synchronisation des sources (FBref vs Football-Data).
     """
     if date_col not in df.columns:
-        print(f"⚠️ La colonne '{date_col}' est absente du DataFrame.")
+        print(f"La colonne '{date_col}' est absente du DataFrame.")
         return None
 
     # Conversion temporaire pour s'assurer du format datetime
@@ -899,7 +892,7 @@ def check_temporal_coverage(df, date_col):
     max_date = temp_dates.max()
     duration = (max_date - min_date).days
 
-    print(f"📅 Couverture temporelle [{date_col}] :")
+    print(f"Couverture temporelle [{date_col}] :")
     print(f"  • Début : {min_date.strftime('%d/%m/%Y')}")
     print(f"  • Fin   : {max_date.strftime('%d/%m/%Y')}")
     print(f"  • Durée : {duration} jours")
@@ -910,7 +903,7 @@ def check_temporal_coverage(df, date_col):
 
 
 
-import pandas as pd
+
 
 def analyze_league_distribution(df, league_col='Div'):
     """
@@ -934,7 +927,7 @@ def analyze_league_distribution(df, league_col='Div'):
     # 4. Calcul et affichage
     counts = df_mapped[league_col].value_counts()
     
-    print("🏆 Répartition par Compétition :")
+    print("Répartition par Compétition :")
     print("-" * 30)
     print(counts.to_string())
     print("-" * 30)
