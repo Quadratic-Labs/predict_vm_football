@@ -64,12 +64,6 @@ def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
 
 
 
-
-
-
-
-
-
 def plot_transfermarkt_quality(df_players, df_clubs=None):
     df_players = df_players.copy()
     
@@ -182,3 +176,531 @@ def check_all_missing_values(df, title="Valeurs manquantes par colonne"):
     
     plt.tight_layout()
     plt.show()
+
+
+
+
+
+
+def get_latest_player_valuations(df_valuations, plot_freshness=True):
+    """
+    Nettoie l'historique des valeurs marchandes pour ne garder que la plus récente
+    par joueur et analyse la fraîcheur des données.
+    """
+    
+    # 1. Copie et conversion immédiate
+    df = df_valuations.copy()
+    df['date'] = pd.to_datetime(df['date']) # Conversion cruciale ici
+    
+    # 2. Tri et dédoublonnage
+    # On trie par date pour que 'last' soit bien la plus récente
+    df_latest = df.sort_values('date').drop_duplicates('player_id', keep='last')
+    
+    # 3. Affichage des statistiques (Utilisation de 'df' converti)
+    print(f"Nombre total d'évaluations dans l'historique : {len(df)}")
+    print(f"Nombre de joueurs uniques évalués : {df_latest['player_id'].nunique()}")
+    print("-" * 30)
+    
+    # On utilise .min() et .max() sur la colonne déjà convertie en datetime
+    print(f"Date de l'évaluation la plus ancienne (historique) : {df['date'].min().date()}")
+    print(f"Date de l'évaluation la plus récente (marché actuel) : {df['date'].max().date()}")
+
+    # 4. Visualisation
+    if plot_freshness:
+        plt.figure(figsize=(10, 4))
+        sns.histplot(df_latest['date'], bins=30, color='darkcyan')
+        plt.title("Répartition des dates de dernières évaluations")
+        plt.xlabel("Année de mise à jour")
+        plt.ylabel("Nombre de joueurs")
+        plt.show()
+
+    return df_latest
+
+
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def filter_valuation_freshness(df_latest_values, threshold_date='2025-10-01', plot_confirmation=True):
+    """
+    Filtre le dataset des valeurs marchandes pour ne conserver que les données récentes.
+    
+    Args:
+        df_latest_values (pd.DataFrame): DataFrame des dernières valeurs par joueur.
+        threshold_date (str): Date charnière au format 'YYYY-MM-DD'.
+        plot_confirmation (bool): Si True, affiche l'histogramme après filtrage.
+        
+    Returns:
+        pd.DataFrame: DataFrame filtré avec uniquement les données fraîches.
+    """
+    
+    # 1. Conversion de la date seuil
+    date_seuil = pd.to_datetime(threshold_date)
+    
+    # 2. Application du filtre
+    # On s'assure que la colonne 'date' est bien au format datetime
+    df_latest_values['date'] = pd.to_datetime(df_latest_values['date'])
+    df_filtered = df_latest_values[df_latest_values['date'] >= date_seuil].copy()
+    
+    # 3. Bilan du filtrage
+    print(f"🧹 Filtre de fraîcheur appliqué (Seuil : {threshold_date}) :")
+    print(f"- Joueurs conservés : {len(df_filtered)}")
+    print(f"- Joueurs écartés (données trop anciennes) : {len(df_latest_values) - len(df_filtered)}")
+    print(f"- Plage finale : du {df_filtered['date'].min().date()} au {df_filtered['date'].max().date()}")
+
+    print(f"Date la plus ancienne conservée : {df_latest_values['date'].min().date()}")
+    print(f"Date la plus récente : {df_latest_values['date'].max().date()}")
+
+
+    # 4. Visualisation de confirmation
+    if plot_confirmation:
+        plt.figure(figsize=(10, 3))
+        df_filtered['date'].hist(bins=20, color='teal', grid=False, rwidth=0.9)
+        plt.title(f"Distribution des dates après filtrage (Min: {threshold_date})")
+        plt.xlabel("Date de mise à jour")
+        plt.ylabel("Nombre de joueurs")
+        plt.show()
+        
+    return df_filtered
+
+
+
+
+def detect_outliers_zscore(df, column):
+    """
+    Détecte les valeurs aberrantes statistiquement (Z-score > 3).
+    """
+    data = df[column].dropna()
+    mean = np.mean(data)
+    std = np.std(data)
+    
+    threshold = 3
+    outliers = df[np.abs((df[column] - mean) / std) > threshold]
+    
+    print(f"Analyse de {column} :")
+    print(f"- Moyenne : {mean:.2f} | Écart-type : {std:.2f}")
+    print(f"- Nombre d'outliers détectés (> 3 std) : {len(outliers)}")
+    
+    return outliers[[column]].sort_values(by=column, ascending=False)
+
+
+
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+def plot_outliers_jitter(df, column, outliers_df):
+    data = df[column].dropna()
+    mean = np.mean(data)
+    std = np.std(data)
+
+    is_outlier = df[column].isin(outliers_df[column])
+
+    np.random.seed(42)
+    jitter = np.random.uniform(-0.4, 0.4, size=len(df))
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+    fig.patch.set_facecolor('#0d0f14')
+    ax.set_facecolor('#161921')
+
+    # Points normaux
+    mask_normal = ~is_outlier & df[column].notna()
+    ax.scatter(
+        df.loc[mask_normal, column],
+        jitter[mask_normal],
+        color='#4a9eff', alpha=0.5, s=20, linewidths=0.5,
+        edgecolors='#4a9eff', label='Valeur normale'
+    )
+
+    # Points outliers
+    mask_out = is_outlier & df[column].notna()
+    ax.scatter(
+        df.loc[mask_out, column],
+        jitter[mask_out],
+        color='#ff5c5c', alpha=0.85, s=35, linewidths=1,
+        edgecolors='#ff5c5c', label='Outlier (|z| > 3)'
+    )
+
+    # Seuils ±3σ
+    for seuil, label in [(mean - 3*std, '−3σ'), (mean + 3*std, '+3σ')]:
+        if seuil > 0:
+            ax.axvline(seuil, color='#f0c040', linewidth=1.2,
+                       linestyle='--', alpha=0.6)
+            if seuil >= 1e6:
+                seuil_label = f'{seuil/1e6:.1f}M€'
+            elif seuil >= 1e3:
+                seuil_label = f'{seuil/1e3:.0f}K€'
+            else:
+                seuil_label = f'{seuil:.0f}€'
+            ax.text(seuil, 0.45, seuil_label, color='#f0c040',
+                    fontsize=8, ha='center', va='bottom')
+
+    # Mise en forme des axes
+    ax.set_xscale('log')
+    ax.set_xlabel('Valeur marchande (€) — échelle log',
+                  color='#5a6072', fontsize=9)
+    ax.set_ylabel('Jitter (dispersion visuelle)',
+                  color='#5a6072', fontsize=9)
+    ax.set_title('Distribution des valeurs marchandes — Outliers Z-score > 3',
+                 color='#e8eaf0', fontsize=13, fontweight='bold', pad=14)
+
+    ax.tick_params(colors='#5a6072')
+    for spine in ax.spines.values():
+        spine.set_edgecolor('#252a35')
+
+    ax.set_ylim(-0.6, 0.6)
+    ax.set_yticks([])
+
+    # Formatage des ticks X
+    from matplotlib.ticker import FuncFormatter
+    def fmt(x, _):
+        if x >= 1e6: return f'{x/1e6:.0f}M€'
+        if x >= 1e3: return f'{x/1e3:.0f}K€'
+        return f'{x:.0f}€'
+    ax.xaxis.set_major_formatter(FuncFormatter(fmt))
+
+    # Légende
+    legend = ax.legend(
+        handles=[
+            mpatches.Patch(color='#4a9eff', label=f'Normal ({(~mask_out).sum()})'),
+            mpatches.Patch(color='#ff5c5c', label=f'Outlier ({mask_out.sum()})')
+        ],
+        facecolor='#161921', edgecolor='#252a35',
+        labelcolor='#e8eaf0', fontsize=9
+    )
+
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+def check_player_duplicates(df_players):
+    """
+    Identifie les doublons potentiels basés sur le nom et la date de naissance.
+    """
+    # On cherche les lignes où le nom et la date de naissance sont identiques
+    duplicates = df_players[df_players.duplicated(subset=['name', 'date_of_birth'], keep=False)]
+    
+    if not duplicates.empty:
+        print(f"⚠️ {len(duplicates)} doublons potentiels détectés (même nom et date de naissance).")
+        return duplicates.sort_values(by='name')
+    else:
+        print("✅ Aucun doublon de joueur détecté sur le combo Nom/Date de naissance.")
+        return None
+
+
+
+def check_referential_integrity(df_players, df_valuations):
+    """
+    Vérifie si tous les IDs de joueurs présents dans les évaluations (prices) 
+    existent bien dans le référentiel des profils joueurs.
+    
+    Args:
+        df_players (pd.DataFrame): Le dataset 'players.csv' (référentiel)
+        df_valuations (pd.DataFrame): Le dataset des prix (consolidé ou brut)
+        
+    Returns:
+        set: La liste des IDs orphelins (si besoin de traitement ultérieur)
+    """
+    
+    # 1. Extraction des sets d'IDs pour comparaison rapide
+    ids_in_players = set(df_players['player_id'])
+    ids_in_valuations = set(df_valuations['player_id'])
+
+    # 2. Identification des orphelins (présents dans prix mais pas dans profils)
+    orphans = ids_in_valuations - ids_in_players
+
+    # 3. Affichage du bilan d'intégrité
+    print(f"🔍 Analyse de l'intégrité référentielle :")
+    print(f"- Joueurs dans le fichier Profil : {len(ids_in_players)}")
+    print(f"- Joueurs dans le fichier Valuations : {len(ids_in_valuations)}")
+    print("-" * 40)
+
+    if orphans:
+        print(f"⚠️  ALERTE : {len(orphans)} joueurs ont des prix mais n'ont pas de profil.")
+        print(f"👉 Ces prix seront perdus lors de la jointure (Merge).")
+        print(f"Exemples d'IDs orphelins : {list(orphans)[:5]}")
+    else:
+        print("✅ INTÉGRITÉ PARFAITE : Tous les prix sont reliés à un profil joueur.")
+    
+    return orphans
+
+
+
+
+def process_market_data(df_players, df_valuations, threshold_date='2025-10-01', min_value=1_000_000):
+    """
+    Réalise le pipeline complet de nettoyage des données de marché :
+    Conversion, Unicité, Filtres de fraîcheur/valeur, Fusion et Nettoyage de colonnes.
+    """
+    
+    # --- 1. PRÉPARATION DES VALUATIONS ---
+    df_v = df_valuations.copy()
+    df_v['date'] = pd.to_datetime(df_v['date'])
+
+    # Harmonisation du nom de la colonne de prix
+    if 'market_value' in df_v.columns and 'market_value_in_eur' not in df_v.columns:
+        df_v = df_v.rename(columns={'market_value': 'market_value_in_eur'})
+    
+    col_prix = 'market_value_in_eur'
+
+    # --- 2. UNICITÉ & FILTRES ---
+    # Garder la valeur la plus récente
+    df_v = df_v.sort_values('date').drop_duplicates('player_id', keep='last')
+    
+    # Filtre de fraîcheur
+    date_seuil = pd.to_datetime(threshold_date)
+    df_v = df_v[df_v['date'] >= date_seuil]
+    
+    # Filtre de valeur (>= 1M€)
+    df_v = df_v[df_v[col_prix] >= min_value]
+
+    # --- 3. FUSION AVEC PLAYERS ---
+    # Éviter les collisions de colonnes lors du merge
+    if col_prix in df_players.columns:
+        df_players_tmp = df_players.drop(columns=[col_prix])
+    else:
+        df_players_tmp = df_players
+
+    # Fusion Inner pour ne garder que ceux qui ont un profil ET un prix valide
+    df_final = df_v.merge(df_players_tmp, on='player_id', how='inner')
+
+    # --- 4. NETTOYAGE FINAL DES COLONNES ---
+    cols_to_drop = ['current_national_team_id', 'agent_name', 'city_of_birth', 'competition_id']
+    df_final = df_final.drop(columns=[c for c in cols_to_drop if c in df_final.columns])
+
+    # --- 5. BILAN ---
+    print("✅ PIPELINE DE VALORISATION TERMINÉ")
+    print(f"- Joueurs conservés : {len(df_final)}")
+    print(f"- Valeur min : {df_final[col_prix].min():,.0f} €")
+    print(f"- Plage temporelle : du {df_final['date'].min().date()} au {df_final['date'].max().date()}")
+    
+    return df_final
+
+
+
+
+
+
+def process_fbref_performance(df_fbref, min_minutes_played=450):
+    """
+    Analyse la fiabilité statistique et filtre le dataset FBref par temps de jeu et poste.
+    
+    Args:
+        df_fbref (pd.DataFrame): Dataset brut FBref.
+        min_minutes_played (int): Seuil de minutes pour la représentativité.
+        
+    Returns:
+        tuple: (df_field_players, df_keepers)
+    """
+    # --- 1. VALIDATION STATISTIQUE (Courbe de Volatilité) ---
+    df_val = df_fbref[df_fbref['Min'] > 0].copy()
+    
+    if 'Gls' in df_val.columns:
+        # Calcul de la métrique de contrôle (Gls/90)
+        df_val['Gls_90'] = (df_val['Gls'] / df_val['Min']) * 90
+        
+        # Calcul de la déviation standard par tranches de 100 min
+        df_val['Min_Group'] = (df_val['Min'] // 100) * 100
+        stability_check = df_val.groupby('Min_Group')['Gls_90'].std()
+
+        # Visualisation de la stabilisation
+        plt.figure(figsize=(10, 5))
+        plt.plot(stability_check.index, stability_check.values, marker='o', color='darkblue', linewidth=2)
+        plt.axvline(x=min_minutes_played, color='red', linestyle='--', label=f'Seuil : {min_minutes_played} min')
+        plt.title("Validation Statistique : Stabilisation de la Variance")
+        plt.xlabel("Minutes jouées (Tranches de 100 min)")
+        plt.ylabel("Écart-type des Buts/90 (Volatilité)")
+        plt.legend()
+        plt.grid(alpha=0.3)
+        plt.show()
+
+        # Calcul de la réduction du bruit pour le log
+        std_low = df_val[df_val['Min'] < min_minutes_played]['Gls_90'].std()
+        std_high = df_val[df_val['Min'] >= min_minutes_played]['Gls_90'].std()
+        noise_red = ((std_low - std_high) / std_low) * 100
+        print(f"📊 Preuve mathématique : Réduction du bruit de {noise_red:.1f}%")
+
+    # --- 2. FILTRAGE ET SÉPARATION ---
+    # Filtrage de représentativité
+    df_rep = df_fbref[df_fbref['Min'] >= min_minutes_played].copy()
+    
+    # Séparation Champ / Gardiens
+    df_field = df_rep[~df_rep['Pos'].str.contains('GK', na=False)].copy()
+    df_keepers = df_rep[df_rep['Pos'].str.contains('GK', na=False)].copy()
+    
+    # --- 3. BILAN ---
+    print(f"✅ FILTRAGE TERMINÉ")
+    print(f"- Joueurs initiaux : {len(df_fbref)}")
+    print(f"- Joueurs conservés : {len(df_rep)} (Soit {len(df_field)} joueurs de champ)")
+    
+    return df_field, df_keepers
+
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def prune_fbref_columns(df_input, threshold=0.80, verbose=True):
+    """
+    Supprime les colonnes vides (NA) et redondantes (techniques) du dataset FBref.
+    Affiche également les graphiques justificatifs.
+    
+    Returns:
+        pd.DataFrame: Le dataset nettoyé.
+    """
+    df_work = df_input.copy()
+    initial_cols = df_work.shape[1]
+
+    # --- 1. Gestion des Valeurs Manquantes (NA) ---
+    null_counts = df_work.isnull().sum() / len(df_work) * 100
+    null_counts_filtered = null_counts[null_counts > 0].sort_values(ascending=False)
+
+    if verbose and not null_counts_filtered.empty:
+        plt.figure(figsize=(12, 5))
+        null_counts_filtered.head(25).plot(kind='bar', color='salmon')
+        plt.axhline(y=threshold*100, color='black', linestyle='--', label=f'Seuil {int(threshold*100)}%')
+        plt.title("Analyse des données manquantes (Top 25 variables)")
+        plt.ylabel("% de NA")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    limit = len(df_work) * threshold
+    cols_to_drop_na = df_work.columns[df_work.isnull().sum() > limit].tolist()
+    df_clean = df_work.drop(columns=cols_to_drop_na)
+
+    # --- 2. Gestion des Redondances ---
+    redundant_patterns = ['stats_', 'Rk', 'Born', 'Nation_']
+    cols_redundant = [col for col in df_clean.columns 
+                      if any(pat in col for pat in redundant_patterns) 
+                      and col not in ['Player', 'Min', '90s']]
+
+    if verbose and cols_redundant:
+        redundancy_summary = {pat: len([c for c in cols_redundant if pat in c]) for pat in redundant_patterns}
+        plt.figure(figsize=(8, 4))
+        sns.barplot(x=list(redundancy_summary.keys()), y=list(redundancy_summary.values()), palette='viridis', hue=list(redundancy_summary.keys()), legend=False)
+        plt.title("Répartition des colonnes redondantes identifiées")
+        plt.ylabel("Nombre de colonnes")
+        plt.show()
+
+    df_final = df_clean.drop(columns=cols_redundant)
+
+    if verbose:
+        print(f"✅ ÉLAGAGE DES VARIABLES TERMINÉ")
+        print(f"---------------------------------------------------")
+        print(f"- Colonnes initiales : {initial_cols}")
+        print(f"- Supprimées (> {int(threshold*100)}% NA) : {len(cols_to_drop_na)}")
+        print(f"- Supprimées (Redondances) : {len(cols_redundant)}")
+        print(f"- Colonnes finales conservées : {df_final.shape[1]}")
+
+    return df_final
+
+
+
+
+import pandas as pd
+
+def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
+    """
+    Gère les doublons de joueurs (dus aux transferts en cours de saison).
+    Garde la ligne où le joueur a le plus de temps de jeu.
+    """
+    df = df_input.copy()
+    
+    # 1. Identification pour le log
+    duplicate_counts = df[player_col].value_counts()
+    players_with_dup = duplicate_counts[duplicate_counts > 1].index.tolist()
+    nb_duplicates_initial = len(df) - df[player_col].nunique()
+
+    if players_with_dup:
+        print(f"🔍 Joueurs avec plusieurs lignes (transferts/doublons) : {len(players_with_dup)}")
+    
+    # 2. Résolution : Tri par joueur puis par la métrique (Minutes) décroissante
+    # On garde la ligne "first" qui sera celle avec le max de minutes
+    df_unique = df.sort_values(by=[player_col, metric_col], ascending=[True, False])
+    df_unique = df_unique.drop_duplicates(subset=[player_col], keep='first')
+    
+    # 3. Bilan
+    print(f"📊 Bilan de l'unicité :")
+    print(f"- Lignes traitées : {len(df)}")
+    print(f"- Lignes après dédoublonnage : {len(df_unique)}")
+    print(f"- 'Doublons de transfert' supprimés : {nb_duplicates_initial}")
+    print("-" * 40)
+    
+    return df_unique
+
+
+
+
+import pandas as pd
+
+def normalize_fbref_formats(df_input):
+    """
+    Normalise les formats de données FBref :
+    - Convertit l'âge '27-125' en 27 (numérique).
+    - Impute les valeurs manquantes par 0 pour les colonnes numériques.
+    """
+    df = df_input.copy()
+    
+    # 1. Conversion de l'Âge (ex: '27-125' -> 27.0)
+    if 'Age' in df.columns:
+        if df['Age'].dtype == 'object':
+            # On split sur le tiret et on prend le premier élément
+            df['Age'] = df['Age'].str.split('-').str[0]
+            # Conversion en float (pour supporter les éventuels NaNs avant imputation)
+            df['Age'] = pd.to_numeric(df['Age'], errors='coerce')
+
+    # 2. Imputation des colonnes numériques
+    # On remplace les NaN par 0 (ex: un joueur sans tir a NaN en % de tirs cadrés)
+    num_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    df[num_cols] = df[num_cols].fillna(0)
+    
+    print(f"📊 Normalisation des formats terminée.")
+    print(f"- Colonnes numériques imputées : {len(num_cols)}")
+    print(f"- Valeurs manquantes totales restantes : {df.isnull().sum().sum()}")
+    
+    return df
+
+
+
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def audit_fbref_outliers(df, metrics=['Gls', 'Ast', 'Sh/90', 'Age'], top_n=5):
+    """
+    Génère des boxplots pour détecter les outliers sur des métriques clés
+    et affiche les joueurs les plus extrêmes pour la première métrique.
+    """
+    # 1. Visualisation graphique
+    plt.figure(figsize=(15, 10))
+    
+    for i, metric in enumerate(metrics):
+        if metric in df.columns:
+            plt.subplot(2, 2, i+1)
+            sns.boxplot(x=df[metric], color='skyblue', fliersize=5)
+            plt.title(f'Distribution de : {metric}', fontsize=12)
+            plt.grid(axis='x', alpha=0.3)
+        else:
+            print(f"⚠️ La métrique '{metric}' est absente du DataFrame.")
+
+    plt.tight_layout()
+    plt.show()
+
+    # 2. Identification des cas extrêmes (sur la première métrique, souvent les buts)
+    primary_metric = metrics[0]
+    if primary_metric in df.columns:
+        print(f"⚽ Top {top_n} 'Outliers' Performance ({primary_metric}) :")
+        top_players = df[['Player', 'Squad', primary_metric, 'Min']].sort_values(by=primary_metric, ascending=False).head(top_n)
+        print(top_players)
+        print("-" * 40)
+    
+    return
