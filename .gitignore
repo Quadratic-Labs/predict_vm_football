@@ -6,3 +6,4 @@
 *.json
 *.feather
 .env
+!mapping_fbref_tm.csv
