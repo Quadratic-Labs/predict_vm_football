@@ -1055,3 +1055,48 @@ def get_statsbomb_last_update(df_matches):
     print(f"-------------------------------------------")
     
     return most_recent_match, last_data_update
+
+
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def plot_statsbomb_distributions(df_matches):
+    """
+    Affiche la répartition des matchs par compétition et la distribution des buts.
+    """
+    sns.set_theme(style="whitegrid")
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Graphique 1 : Top Compétitions
+    sns.countplot(data=df_matches, y='competition.competition_name', 
+                  order=df_matches['competition.competition_name'].value_counts().index, 
+                  ax=axes[0], palette='viridis')
+    axes[0].set_title('Répartition des Matchs par Compétition')
+    axes[0].set_xlabel('Nombre de Matchs')
+
+    # Graphique 2 : Distribution des buts (Home vs Away)
+    goals_df = df_matches[['home_score', 'away_score']].melt()
+    sns.histplot(data=goals_df, x='value', hue='variable', kde=True, 
+                 element="step", ax=axes[1], palette='magma')
+    axes[1].set_title('Distribution des Buts (Domicile vs Extérieur)')
+    axes[1].set_xlabel('Buts marqués')
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_lineup_analysis(df_lineups):
+    """
+    Analyse la structure des effectifs.
+    """
+    plt.figure(figsize=(10, 5))
+    
+    # Nombre de joueurs par équipe par match (pour vérifier la complétude)
+    players_per_match = df_lineups.groupby(['match_id', 'team_name']).size()
+    
+    sns.histplot(players_per_match, bins=20, kde=True, color='skyblue')
+    plt.title('Nombre de joueurs répertoriés par feuille de match')
+    plt.xlabel('Nombre de joueurs')
+    plt.ylabel('Fréquence')
+    plt.show()
