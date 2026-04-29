@@ -15,7 +15,7 @@ import unicodedata
 
 
 
-
+# Faire un commentaire avant chaque fonction
 
 def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
     """
