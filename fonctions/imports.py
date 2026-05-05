@@ -8,6 +8,8 @@ import pandas as pd
 import json
 from pathlib import Path
 import pyarrow
+import soccerdata as sd
+import locale
 
 def download_kaggle_dataset(dataset_query, destination_folder):
     """
@@ -139,3 +141,113 @@ def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_na
     
     final_df.to_feather(output_path)
     print(f"Terminé ! Fichier : {output_path.name} ({len(final_df)} lignes)")
+
+
+
+
+locale.setlocale(locale.LC_TIME, 'English_United States.1252')
+
+def get_understat_xg(start_season, end_season, leagues=None):
+    """
+    Récupère les stats xG/xA depuis Understat via soccerdata.
+    Colonnes disponibles : games, goals, shots, time, xG, assists, xA,
+                           key_passes, yellow, red, position, npg, npxG, xGChain, xGBuildup
+    """
+    if leagues is None:
+        leagues = ['ENG-Premier League', 'ESP-La Liga', 'FRA-Ligue 1',
+                   'GER-Bundesliga', 'ITA-Serie A']
+
+    # Understat utilise l'année de début de saison (ex: 2020 pour 2020-21)
+    seasons_list = list(range(start_season, end_season + 1))
+
+    print(f"Understat | Ligues : {leagues} | Saisons : {seasons_list}")
+
+    try:
+        understat = sd.Understat(leagues=leagues, seasons=seasons_list)
+        df = understat.read_player_season_stats()
+
+        if df is not None and not df.empty:
+            df = df.reset_index()
+            print(f"✓ {len(df)} lignes récupérées")
+            print(f"Colonnes : {df.columns.tolist()}")
+            return df
+        else:
+            print("✗ DataFrame vide")
+            return pd.DataFrame()
+
+    except Exception as e:
+        print(f"--- ERREUR ---\n{e}")
+        return pd.DataFrame()
+
+
+def flatten_columns(df):
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = ['_'.join(filter(None, map(str, col))).strip() for col in df.columns]
+    return df
+
+
+def get_players_advanced_stats_range(start_season, end_season, leagues=['FRA-Ligue 1']):
+
+    stat_types = [
+        'standard',
+        'keeper',
+        'shooting',   # Contient Expected_xG, Expected_npxG, Expected_xA...
+        'playing_time',
+        'misc'
+    ]
+
+    seasons_list = []
+    for year in range(start_season, end_season + 1):
+        next_year = str(year + 1)[-2:]
+        seasons_list.append(f"{str(year)[-2:]}-{next_year}")
+
+    print(f"Ligues : {leagues} | Saisons : {seasons_list}")
+
+    try:
+        fbref = sd.FBref(leagues=leagues, seasons=seasons_list)
+        all_stats = {}
+
+        for stat in stat_types:
+            print(f"  → Extraction : {stat}...")
+            try:
+                df = fbref.read_player_season_stats(stat_type=stat)
+                if df is not None and not df.empty:
+                    df = flatten_columns(df.reset_index())
+                    all_stats[stat] = df
+
+                    # Affiche les colonnes xG si présentes
+                    xg_cols = [c for c in df.columns if 'xG' in c or 'xA' in c or 'npxG' in c or 'Expected' in c]
+                    if xg_cols:
+                        print(f"     ✓ {len(df)} lignes | Colonnes xG trouvées : {xg_cols}")
+                    else:
+                        print(f"     ✓ {len(df)} lignes | (pas de xG dans ce stat_type)")
+                else:
+                    print(f"     ✗ Vide")
+            except Exception as e:
+                print(f"     ✗ Erreur sur '{stat}' : {e}")
+
+        if not all_stats:
+            return pd.DataFrame()
+
+        # Clés de fusion
+        merge_keys = ['player', 'team', 'season', 'league']
+        merge_keys = [k for k in merge_keys if k in all_stats['standard'].columns]
+
+        df_final = all_stats['standard']
+
+        for stat, df in all_stats.items():
+            if stat == 'standard':
+                continue
+            cols_to_keep = merge_keys + [c for c in df.columns if c not in df_final.columns]
+            df_final = df_final.merge(df[cols_to_keep], on=merge_keys, how='left')
+            print(f"  → Fusion '{stat}' : {df_final.shape[1]} colonnes")
+
+        # Résumé des colonnes xG dans le dataset final
+        xg_final = [c for c in df_final.columns if any(x in c for x in ['xG', 'xA', 'npxG', 'Expected'])]
+        print(f"\nColonnes xG dans le dataset final : {xg_final}")
+        print(f"Dataset final : {df_final.shape[0]} lignes x {df_final.shape[1]} colonnes")
+        return df_final
+
+    except Exception as e:
+        print(f"\n--- ERREUR CRITIQUE ---\nDétails : {e}")
+        return pd.DataFrame()
