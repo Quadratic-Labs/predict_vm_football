@@ -11,7 +11,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import unicodedata
-
+from IPython.display import display, Markdown
 
 
 
@@ -19,50 +19,46 @@ import unicodedata
 
 def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
     """
-    Se connecte à l'API Kaggle et récupère la date de dernière mise à jour 
+    Se connecte à l'API Kaggle et récupère la date de dernière mise à jour
     d'un dataset spécifique passé en argument.
     """
-    # 1. Chargement des identifiants
     load_dotenv(dotenv_path=env_path)
-    
-    username = os.getenv('KAGGLE_USERNAME')
-    api_token = os.getenv('KAGGLE_API_TOKEN')
+
+    username = os.getenv("KAGGLE_USERNAME")
+    api_token = os.getenv("KAGGLE_API_TOKEN")
 
     if not username or not api_token:
         print("Erreur : Identifiants Kaggle manquants dans le fichier .env")
         return None
 
-    os.environ['KAGGLE_USERNAME'] = username
-    os.environ['KAGGLE_API_TOKEN'] = api_token
+    os.environ["KAGGLE_USERNAME"] = username
+    os.environ["KAGGLE_KEY"] = api_token
 
-    # 2. Authentification
     try:
         api = KaggleApi()
-    except Exception as e:
-        print(f"Erreur d'authentification Kaggle : {e}")
-        return None
+        api.authenticate()
 
-    # 3. Recherche du dataset exact
-    # On utilise l'API pour l'affichage de la fiche du dataset
-    try:
         datasets = api.dataset_list(search=dataset_query)
-        
+
         for ds in datasets:
             if ds.ref == dataset_query:
-                # Récupération de la date (gestion des noms d'attributs)
-                date_maj = getattr(ds, 'lastUpdated', None) or getattr(ds, 'last_updated', "Date inconnue")
-                
+
+                date_maj = (
+                    getattr(ds, "lastUpdated", None)
+                    or getattr(ds, "last_updated", None)
+                )
+
                 print(f"Dataset trouvé : {ds.ref}")
                 print(f"Dernière mise à jour : {date_maj}")
+
                 return date_maj
 
         print(f"Dataset '{dataset_query}' non trouvé sur Kaggle.")
         return None
-        
+
     except Exception as e:
         print(f"Erreur lors de la recherche du dataset : {e}")
         return None
-
 
 
 
@@ -268,111 +264,9 @@ def filter_valuation_freshness(df_latest_values, threshold_date='2025-10-01', pl
 
 
 
-def detect_outliers_zscore(df, column):
-    """
-    Détecte les valeurs aberrantes statistiquement (Z-score > 3).
-    """
-    data = df[column].dropna()
-    mean = np.mean(data)
-    std = np.std(data)
-    
-    threshold = 3
-    outliers = df[np.abs((df[column] - mean) / std) > threshold]
-    
-    print(f"Analyse de {column} :")
-    print(f"- Moyenne : {mean:.2f} | Écart-type : {std:.2f}")
-    print(f"- Nombre d'outliers détectés (> 3 std) : {len(outliers)}")
-    
-    return outliers[[column]].sort_values(by=column, ascending=False)
 
 
 
-
-
-
-
-def plot_outliers_jitter(df, column, outliers_df):
-    data = df[column].dropna()
-    mean = np.mean(data)
-    std = np.std(data)
-
-    is_outlier = df[column].isin(outliers_df[column])
-
-    np.random.seed(42)
-    jitter = np.random.uniform(-0.4, 0.4, size=len(df))
-
-    fig, ax = plt.subplots(figsize=(14, 5))
-    fig.patch.set_facecolor('#0d0f14')
-    ax.set_facecolor('#161921')
-
-    # Points normaux
-    mask_normal = ~is_outlier & df[column].notna()
-    ax.scatter(
-        df.loc[mask_normal, column],
-        jitter[mask_normal],
-        color='#4a9eff', alpha=0.5, s=20, linewidths=0.5,
-        edgecolors='#4a9eff', label='Valeur normale'
-    )
-
-    # Points outliers
-    mask_out = is_outlier & df[column].notna()
-    ax.scatter(
-        df.loc[mask_out, column],
-        jitter[mask_out],
-        color='#ff5c5c', alpha=0.85, s=35, linewidths=1,
-        edgecolors='#ff5c5c', label='Outlier (|z| > 3)'
-    )
-
-    # Seuils ±3σ
-    for seuil, label in [(mean - 3*std, '−3σ'), (mean + 3*std, '+3σ')]:
-        if seuil > 0:
-            ax.axvline(seuil, color='#f0c040', linewidth=1.2,
-                       linestyle='--', alpha=0.6)
-            if seuil >= 1e6:
-                seuil_label = f'{seuil/1e6:.1f}M€'
-            elif seuil >= 1e3:
-                seuil_label = f'{seuil/1e3:.0f}K€'
-            else:
-                seuil_label = f'{seuil:.0f}€'
-            ax.text(seuil, 0.45, seuil_label, color='#f0c040',
-                    fontsize=8, ha='center', va='bottom')
-
-    # Mise en forme des axes
-    ax.set_xscale('log')
-    ax.set_xlabel('Valeur marchande (€) — échelle log',
-                  color='#5a6072', fontsize=9)
-    ax.set_ylabel('Jitter (dispersion visuelle)',
-                  color='#5a6072', fontsize=9)
-    ax.set_title('Distribution des valeurs marchandes — Outliers Z-score > 3',
-                 color='#e8eaf0', fontsize=13, fontweight='bold', pad=14)
-
-    ax.tick_params(colors='#5a6072')
-    for spine in ax.spines.values():
-        spine.set_edgecolor('#252a35')
-
-    ax.set_ylim(-0.6, 0.6)
-    ax.set_yticks([])
-
-    # Formatage des ticks X
-    from matplotlib.ticker import FuncFormatter
-    def fmt(x, _):
-        if x >= 1e6: return f'{x/1e6:.0f}M€'
-        if x >= 1e3: return f'{x/1e3:.0f}K€'
-        return f'{x:.0f}€'
-    ax.xaxis.set_major_formatter(FuncFormatter(fmt))
-
-    # Légende
-    legend = ax.legend(
-        handles=[
-            mpatches.Patch(color='#4a9eff', label=f'Normal ({(~mask_out).sum()})'),
-            mpatches.Patch(color='#ff5c5c', label=f'Outlier ({mask_out.sum()})')
-        ],
-        facecolor='#161921', edgecolor='#252a35',
-        labelcolor='#e8eaf0', fontsize=9
-    )
-
-    plt.tight_layout()
-    plt.show()
 
 
 
@@ -420,11 +314,10 @@ def check_referential_integrity(df_players, df_valuations):
     print("-" * 40)
 
     if orphans:
-        print(f"ALERTE : {len(orphans)} joueurs ont des prix mais n'ont pas de profil.")
-        print(f"Ces prix seront perdus lors de la jointure (Merge).")
+        print(f"Alerte : {len(orphans)} joueurs ont des prix mais n'ont pas de profil.")
         print(f"Exemples d'IDs orphelins : {list(orphans)[:5]}")
     else:
-        print("INTÉGRITÉ PARFAITE : Tous les prix sont reliés à un profil joueur.")
+        print("Intégrité parfaite : Tous les prix sont reliés à un profil joueur.")
     
     return orphans
 
