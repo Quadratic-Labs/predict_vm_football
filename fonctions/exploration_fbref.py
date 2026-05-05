@@ -15,8 +15,20 @@ import unicodedata
 
 def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
     """
-    Se connecte à l'API Kaggle et récupère la date de dernière mise à jour
-    d'un dataset spécifique passé en argument.
+    Se connecte à l'API Kaggle pour récupérer la date de dernière mise à jour d'un dataset.
+
+    Cette fonction authentifie l'utilisateur via les variables d'environnement chargées 
+    depuis un fichier .env, recherche le dataset spécifié et extrait sa date de 
+    dernière modification.
+
+    arguments :
+        dataset_query (str): L'identifiant complet du dataset sur Kaggle
+        env_path (str): Le chemin vers le fichier .env contenant KAGGLE_USERNAME et KAGGLE_API_TOKEN. 
+                        Par défaut : "../.env".
+
+    returns :
+        datetime/str: La date de dernière mise à jour si le dataset est trouvé.
+        None: Si les identifiants sont manquants, si le dataset n'existe pas ou en cas d'erreur.
     """
     load_dotenv(dotenv_path=env_path)
 
@@ -32,7 +44,6 @@ def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
 
     try:
         api = KaggleApi()
-        api.authenticate()
 
         datasets = api.dataset_list(search=dataset_query)
 
@@ -71,7 +82,7 @@ def process_fbref_performance(df_fbref, min_minutes_played=450):
     Returns:
         tuple: (df_field_players, df_keepers)
     """
-    # --- 1. VALIDATION STATISTIQUE (Courbe de Volatilité) ---
+    
     df_val = df_fbref[df_fbref['Min'] > 0].copy()
     
     if 'Gls' in df_val.columns:
@@ -99,15 +110,15 @@ def process_fbref_performance(df_fbref, min_minutes_played=450):
         noise_red = ((std_low - std_high) / std_low) * 100
         print(f"Preuve mathématique : Réduction du bruit de {noise_red:.1f}%")
 
-    # --- 2. FILTRAGE ET SÉPARATION ---
+
     # Filtrage de représentativité
     df_rep = df_fbref[df_fbref['Min'] >= min_minutes_played].copy()
     
-    # Séparation Champ / Gardiens
+    # Séparation des joueurs de champ / gardiens
     df_field = df_rep[~df_rep['Pos'].str.contains('GK', na=False)].copy()
     df_keepers = df_rep[df_rep['Pos'].str.contains('GK', na=False)].copy()
     
-    # --- 3. BILAN ---
+
     print(f"FILTRAGE TERMINÉ")
     print(f"- Joueurs initiaux : {len(df_fbref)}")
     print(f"- Joueurs conservés : {len(df_rep)} (Soit {len(df_field)} joueurs de champ)")
@@ -120,16 +131,27 @@ def process_fbref_performance(df_fbref, min_minutes_played=450):
 
 def prune_fbref_columns(df_input, threshold=0.80, verbose=True):
     """
-    Supprime les colonnes vides (NA) et redondantes (techniques) du dataset FBref.
-    Affiche également les graphiques justificatifs.
-    
-    Returns:
-        pd.DataFrame: Le dataset nettoyé.
+    Analyse la fiabilité statistique et filtre le dataset FBref par temps de jeu et par poste.
+
+    Cette fonction effectue une validation mathématique de la représentativité des données en 
+    visualisant la stabilisation de la variance des buts par 90 minutes. Elle 
+    sépare ensuite les joueurs de champ des gardiens de but après avoir appliqué un seuil 
+    de temps de jeu minimal.
+
+    arguments:
+        df_fbref: Le dataset brut issu de FBref contenant les statistiques de performance.
+        min_minutes_played (int): Le seuil minimal de minutes jouées pour considérer qu'un profil est 
+                                statistiquement représentatif. Par défaut : 450.
+
+    returns:
+        tuple: Un tuple contenant deux DataFrames :
+            - df_field : Les joueurs de champ ayant dépassé le seuil de minutes.
+            - df_keepers : Les gardiens de but ayant dépassé le seuil de minutes.
     """
     df_work = df_input.copy()
     initial_cols = df_work.shape[1]
 
-    # --- 1. Gestion des Valeurs Manquantes (NA) ---
+    # Gestion des Valeurs Manquantes
     null_counts = df_work.isnull().sum() / len(df_work) * 100
     null_counts_filtered = null_counts[null_counts > 0].sort_values(ascending=False)
 
@@ -150,12 +172,23 @@ def prune_fbref_columns(df_input, threshold=0.80, verbose=True):
 
 def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
     """
-    Gère les doublons de joueurs (dus aux transferts en cours de saison).
-    Garde la ligne où le joueur a le plus de temps de jeu.
+    Gère les doublons de joueurs au sein d'une même saison, généralement causés par des transferts.
+
+    Lorsqu'un joueur évolue dans plusieurs clubs au cours d'une même saison, FBref génère 
+    souvent une ligne par club. Cette fonction permet de ne conserver qu'une seule entrée par 
+    joueur en sélectionnant la ligne où son temps de jeu est le plus élevé.
+
+    arguments:
+        df_input: Le dataset contenant les joueurs en doublon.
+        player_col (str): Le nom de la colonne identifiant les joueurs. Par défaut : 'Player'.
+        metric_col (str): La colonne utilisée pour décider quelle ligne conserver (la valeur 
+                        maximale sera gardée). Par défaut : 'Min'.
+
+    returns:
+        dataframe: Un DataFrame où chaque joueur apparaît de manière unique.
     """
     df = df_input.copy()
     
-    # 1. Identification pour le log
     duplicate_counts = df[player_col].value_counts()
     players_with_dup = duplicate_counts[duplicate_counts > 1].index.tolist()
     nb_duplicates_initial = len(df) - df[player_col].nunique()
@@ -163,12 +196,11 @@ def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
     if players_with_dup:
         print(f"Joueurs avec plusieurs lignes (transferts/doublons) : {len(players_with_dup)}")
     
-    # 2. Résolution : Tri par joueur puis par la métrique (Minutes) décroissante
-    # On garde la ligne "first" qui sera celle avec le max de minutes
+    # Tri par joueur puis par la métrique (Minutes) décroissante
+    # On garde la ligne "first" qui sera celle avec le maximum de minutes
     df_unique = df.sort_values(by=[player_col, metric_col], ascending=[True, False])
     df_unique = df_unique.drop_duplicates(subset=[player_col], keep='first')
     
-    # 3. Bilan
     print(f"Bilan de l'unicité :")
     print(f"- Lignes traitées : {len(df)}")
     print(f"- Lignes après dédoublonnage : {len(df_unique)}")
@@ -183,25 +215,37 @@ def resolve_player_duplicates(df_input, player_col='Player', metric_col='Min'):
 
 def normalize_fbref_formats(df_input):
     """
-    Normalise les formats de données FBref :
-    - Convertit l'âge '27-125' en 27 (numérique).
-    - Impute les valeurs manquantes par 0 pour les colonnes numériques.
+    Normalise les formats de données FBref et traite les valeurs manquantes par type de colonne.
+
+    Cette fonction effectue un nettoyage technique. Elle convertit le format 
+    d'âge spécifique à FBref en valeur numérique, l'imputation des données numériques 
+    manquantes par zéro (fréquent pour les statistiques de performance non réalisées), 
+    et le marquage des données textuelles manquantes comme inconnues.
+
+    arguments:
+        df_input: Le DataFrame brut contenant les données extraites de FBref.
+
+    returns:
+        dataframe: Le DataFrame nettoyé avec les types de colonnes harmonisés et 
+                    aucune valeur manquante.
     """
     df = df_input.copy()
     
-    # 1. Conversion de l'Âge (ex: '27-125' -> 27.0)
+    # Conversion de l'âge
     if 'Age' in df.columns:
         if df['Age'].dtype == 'object':
             # On split sur le tiret et on prend le premier élément
             df['Age'] = df['Age'].str.split('-').str[0]
-            # Conversion en float (pour supporter les éventuels NaNs avant imputation)
+            # Conversion en float
             df['Age'] = pd.to_numeric(df['Age'], errors='coerce')
 
-    # 2. Imputation des colonnes numériques
-    # On remplace les NaN par 0 (ex: un joueur sans tir a NaN en % de tirs cadrés)
+    # Imputation des colonnes numériques
+    # On remplace les valeurs manquantes par 0
     num_cols = df.select_dtypes(include=['float64', 'int64']).columns
     df[num_cols] = df[num_cols].fillna(0)
 
+    # Imputation des colonnes non-numériques
+    # On remplace les valeurs manquantes par "Unkown"
     non_num_cols = df.select_dtypes(exclude=['float64', 'int64']).columns
     df[non_num_cols] = df[non_num_cols].fillna("Unknown")
     
@@ -217,10 +261,24 @@ def normalize_fbref_formats(df_input):
 
 def audit_fbref_outliers(df, metrics=['Gls', 'Ast', 'Sh/90', 'Age'], top_n=5):
     """
-    Génère des boxplots pour détecter les outliers sur des métriques clés
-    et affiche les joueurs les plus extrêmes pour la première métrique.
+    Identifie et visualise les valeurs aberrantes pour des métriques de performance clés.
+
+    Cette fonction génère une grille de boxplots pour analyser la distribution statistique des
+    variables sélectionnées. Elle permet de détecter visuellement les performances
+    exceptionnelles ou les erreurs de données, et liste explicitement les 
+    joueurs affichant les valeurs les plus élevées pour la métrique principale.
+
+    arguments:
+        df: Le dataset contenant les statistiques des joueurs.
+        metrics (list): Liste des colonnes à analyser graphiquement (max 4 pour l'affichage). 
+                        Par défaut : ['Gls', 'Ast', 'Sh/90', 'Age'].
+        top_n (int): Nombre de joueurs extrêmes à afficher dans le bilan textuel. 
+                    Par défaut : 5.
+
+    returns:
+        None: La fonction affiche directement les graphiques et les tableaux de données.
     """
-    # 1. Visualisation graphique
+
     plt.figure(figsize=(15, 10))
     
     for i, metric in enumerate(metrics):
@@ -235,7 +293,7 @@ def audit_fbref_outliers(df, metrics=['Gls', 'Ast', 'Sh/90', 'Age'], top_n=5):
     plt.tight_layout()
     plt.show()
 
-    # 2. Identification des cas extrêmes (sur la première métrique, souvent les buts)
+    # Identification des cas extrêmes (sur la première métrique, souvent les buts)
     primary_metric = metrics[0]
     if primary_metric in df.columns:
         print(f"Top {top_n} 'Outliers' Performance ({primary_metric}) :")

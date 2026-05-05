@@ -15,8 +15,20 @@ import unicodedata
 
 def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
     """
-    Se connecte à l'API Kaggle et récupère la date de dernière mise à jour
-    d'un dataset spécifique passé en argument.
+    Se connecte à l'API Kaggle pour récupérer la date de dernière mise à jour d'un dataset.
+
+    Cette fonction authentifie l'utilisateur via les variables d'environnement chargées 
+    depuis un fichier .env, recherche le dataset spécifié et extrait sa date de 
+    dernière modification.
+
+    arguments :
+        dataset_query (str): L'identifiant complet du dataset sur Kaggle
+        env_path (str): Le chemin vers le fichier .env contenant KAGGLE_USERNAME et KAGGLE_API_TOKEN. 
+                        Par défaut : "../.env".
+
+    returns :
+        datetime/str: La date de dernière mise à jour si le dataset est trouvé.
+        None: Si les identifiants sont manquants, si le dataset n'existe pas ou en cas d'erreur.
     """
     load_dotenv(dotenv_path=env_path)
 
@@ -60,36 +72,52 @@ def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
 
 
 def plot_transfermarkt_quality(df_players, df_clubs=None):
+    """
+    Génère un diagnostic visuel de la qualité et de la distribution des données Transfermarkt.
+
+    Cette fonction crée une grille de visualisations permettant d'analyser la cohérence des 
+    données de valeur marchande et la démographie des joueurs. Si un référentiel de clubs
+    est fourni, elle génère également une comparaison du marché financier entre les
+    championnats du Big 5 européen.
+
+    arguments:
+        df_players : Le dataset des joueurs contenant au minimum les colonnes 
+                                'market_value_in_eur' et 'date_of_birth'.
+        df_clubs : Le dataset des clubs pour l'analyse par ligue. 
+                    Nécessaire pour afficher la comparaison du Big 5. 
+                    Par défaut : None.
+
+    returns:
+        None: La fonction affiche directement une figure composée de 4 graphiques.
+    """
     df_players = df_players.copy()
     
-    # 1. Calcul de l'âge
+    # Calcul de l'âge
     df_players['date_of_birth'] = pd.to_datetime(df_players['date_of_birth'], errors='coerce')
     df_players['age'] = pd.Timestamp.now().year - df_players['date_of_birth'].dt.year
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     plt.subplots_adjust(hspace=0.3)
 
-    # --- GRAPH 1 & 2 : Valeurs ---
+    # Graphiques 1 et 2 : valeurs marchandes
     sns.histplot(df_players['market_value_in_eur'].dropna(), kde=True, ax=axes[0, 0], color='blue')
     sns.histplot(np.log1p(df_players['market_value_in_eur'].dropna()), kde=True, ax=axes[0, 1], color='green')
     axes[0, 0].set_title("Distribution Valeur Marchande")
     axes[0, 1].set_title("Distribution (Log Scale)")
 
-    # --- GRAPH 3 : Âge ---
+    # Graphique 3 : âge
     sns.histplot(df_players['age'].dropna(), bins=20, kde=True, ax=axes[1, 0], color='orange')
     axes[1, 0].set_title("Répartition par Âge")
 
-
-
-    # --- GRAPH 4 : Boxplot Big 5 (version finale propre) ---
+    # Graphique ' : boxplots
     if df_clubs is not None:
         
-        # 🔹 Identification des colonnes
+        # Identification des colonnes
         col_club_p = 'current_club_id' if 'current_club_id' in df_players.columns else 'club_id'
         col_club_c = 'club_id'
         col_comp = [c for c in df_clubs.columns if 'competition' in c and 'id' in c][0]
         
-        # 🔹 Merge joueurs + clubs
+        # Merge joueurs + clubs
         temp_df = df_players.merge(
             df_clubs[[col_club_c, col_comp]], 
             left_on=col_club_p, 
@@ -97,13 +125,13 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
             how='left'
         )
         
-        # 🔹 IDs du Big 5
+        # identifiants du Big 5
         big5_ids = ['GB1', 'ES1', 'L1', 'IT1', 'FR1']
         
-        # 🔹 Filtrage Big 5
+        # Filtrage Big 5
         df_big5 = temp_df[temp_df[col_comp].isin(big5_ids)].copy()
         
-        # 🔹 Mapping IDs → noms lisibles
+        
         league_names = {
             'GB1': 'Premier League',
             'ES1': 'La Liga',
@@ -114,7 +142,7 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
         
         df_big5['league_name'] = df_big5[col_comp].map(league_names)
         
-        # 🔹 Ordre logique des ligues
+        # Ordre logique des ligues
         order = [
             'Premier League',
             'La Liga',
@@ -123,7 +151,7 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
             'Ligue 1'
         ]
         
-        # 🔹 Plot
+
         sns.boxplot(
             data=df_big5,
             x='league_name',
@@ -145,8 +173,20 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
 
 def check_all_missing_values(df, title="Valeurs manquantes par colonne"):
     """
-    Affiche le % de valeurs manquantes pour toutes les colonnes du DataFrame
-    qui contiennent au moins un NaN.
+    Identifie et visualise le pourcentage de valeurs manquantes pour chaque colonne du DataFrame.
+
+    Cette fonction calcule le taux de complétude des données et génère un graphique à barres 
+    présentant uniquement les colonnes contenant des valeurs nulles. Elle inclut un 
+    seuil critique visuel à 20%.
+
+    arguments:
+        df : Le DataFrame à analyser.
+        title (str): Le titre personnalisé pour le graphique. 
+                    Par défaut : "Valeurs manquantes par colonne".
+
+    returns:
+        None: La fonction affiche un message texte si aucune valeur manquante n'est trouvée, 
+            ou un graphique le cas échéant.
     """
     # Calcul du % de manquants pour chaque colonne
     missing_pct = (df.isnull().sum() / len(df)) * 100
@@ -176,7 +216,19 @@ def check_all_missing_values(df, title="Valeurs manquantes par colonne"):
 
 def check_player_duplicates(df_players):
     """
-    Identifie les doublons potentiels basés sur le nom et la date de naissance.
+    Identifie les doublons potentiels de joueurs en croisant le nom et la date de naissance.
+
+    Cette fonction effectue une vérification de l'intégrité du dataset en isolant les joueurs 
+    qui partagent exactement le même nom et la même date de naissance.
+
+    arguments:
+        df_players : Le dataset des joueurs contenant au minimum les colonnes 
+                            'name' et 'date_of_birth'.
+
+    returns:
+        dataframe: Un dataframe contenant toutes les lignes suspectées d'être des doublons, 
+                    triées par nom pour faciliter la comparaison manuelle.
+        None: Si aucune duplication n'est trouvée.
     """
     # On cherche les lignes où le nom et la date de naissance sont identiques
     duplicates = df_players[df_players.duplicated(subset=['name', 'date_of_birth'], keep=False)]
@@ -192,19 +244,32 @@ def check_player_duplicates(df_players):
 
 def get_latest_player_valuations(df_valuations, plot_freshness=True):
     """
-    Nettoie l'historique des valeurs marchandes pour ne garder que la plus récente
-    par joueur et analyse la fraîcheur des données.
+    Extrait la valeur marchande la plus récente pour chaque joueur et analyse la fraîcheur
+    du dataset.
+
+    Cette fonction traite l'historique complet des valeurs marchandes pour isoler la
+    dernière situation connue de chaque joueur. Elle inclut une étape de diagnostic temporel
+    pour vérifier si les données sont à jour ou si le dataset contient des évaluations
+    obsolètes.
+
+    arguments:
+        df_valuations : Le dataset historique des valeurs contenant 'player_id' et 'date'.
+        plot_freshness (bool): Si True, affiche un histogramme de la répartition des dates 
+                            de mise à jour. Par défaut : True.
+
+    Returns:
+        dataframe: Un dataframe contenant une seule ligne par joueur (la plus récente).
     """
     
-    # 1. Copie et conversion immédiate
+    # Copie et conversion immédiate
     df = df_valuations.copy()
-    df['date'] = pd.to_datetime(df['date']) # Conversion cruciale ici
+    df['date'] = pd.to_datetime(df['date'])
     
-    # 2. Tri et dédoublonnage
+    # Tri et dédoublonnage
     # On trie par date pour que 'last' soit bien la plus récente
     df_latest = df.sort_values('date').drop_duplicates('player_id', keep='last')
     
-    # 3. Affichage des statistiques (Utilisation de 'df' converti)
+    # Affichage des statistiques
     print(f"Nombre total d'évaluations dans l'historique : {len(df)}")
     print(f"Nombre de joueurs uniques évalués : {df_latest['player_id'].nunique()}")
     print("-" * 30)
@@ -213,7 +278,7 @@ def get_latest_player_valuations(df_valuations, plot_freshness=True):
     print(f"Date de l'évaluation la plus ancienne (historique) : {df['date'].min().date()}")
     print(f"Date de l'évaluation la plus récente (marché actuel) : {df['date'].max().date()}")
 
-    # 4. Visualisation
+    # Visualisation
     if plot_freshness:
         plt.figure(figsize=(10, 4))
         sns.histplot(df_latest['date'], bins=30, color='darkcyan')
@@ -231,22 +296,22 @@ def check_referential_integrity(df_players, df_valuations):
     Vérifie si tous les IDs de joueurs présents dans les évaluations (prices) 
     existent bien dans le référentiel des profils joueurs.
     
-    Args:
-        df_players (pd.DataFrame): Le dataset 'players.csv' (référentiel)
-        df_valuations (pd.DataFrame): Le dataset des prix (consolidé ou brut)
+    arguments:
+        df_players : Le dataset des joueurs
+        df_valuations : Le dataset des prix
         
-    Returns:
-        set: La liste des IDs orphelins (si besoin de traitement ultérieur)
+    returns:
+        set: La liste des IDs orphelins
     """
     
-    # 1. Extraction des sets d'IDs pour comparaison rapide
+    # Extraction des sets d'IDs pour comparaison rapide
     ids_in_players = set(df_players['player_id'])
     ids_in_valuations = set(df_valuations['player_id'])
 
-    # 2. Identification des orphelins (présents dans prix mais pas dans profils)
+    # Identification des orphelins (présents dans prix mais pas dans profils)
     orphans = ids_in_valuations - ids_in_players
 
-    # 3. Affichage du bilan d'intégrité
+
     print(f"Analyse de l'intégrité référentielle :")
     print(f"- Joueurs dans le fichier Profil : {len(ids_in_players)}")
     print(f"- Joueurs dans le fichier Valuations : {len(ids_in_valuations)}")
