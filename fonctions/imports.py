@@ -251,3 +251,54 @@ def get_players_advanced_stats_range(start_season, end_season, leagues=['FRA-Lig
     except Exception as e:
         print(f"\n--- ERREUR CRITIQUE ---\nDétails : {e}")
         return pd.DataFrame()
+
+
+
+def merge_fbref_understat(df_fbref, df_understat, output_path=None):
+    """
+    Nettoie, dédoublonne et fusionne les données FBref et Understat.
+    
+    Args:
+        df_fbref (pd.DataFrame): Dataset de base (FBref)
+        df_understat (pd.DataFrame): Dataset contenant les xG (Understat)
+        output_path (str, optional): Chemin pour sauvegarder le CSV final.
+        
+    Returns:
+        pd.DataFrame: Le dataset fusionné.
+    """
+    # 1. Dédoublonnage d'Understat
+    # On garde les colonnes utiles + les clés de jointure
+    keys = ['player', 'team', 'league', 'season']
+    cols_to_keep = keys + ['xg', 'xa', 'np_xg', 'xg_chain', 'xg_buildup']
+    
+    df_xg_clean = df_understat.drop_duplicates(subset=keys).copy()
+    
+    print(f"Dédoublonnage Understat : {len(df_understat)} -> {len(df_xg_clean)} lignes.")
+
+    # 2. Harmonisation des types pour les colonnes clés
+    # On s'assure que la saison est en entier et les chaînes en minuscules/sans espaces
+    for df in [df_fbref, df_xg_clean]:
+        df['season'] = df['season'].astype(int)
+        for col in ['player', 'team', 'league']:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+
+    # 3. Fusion (Merge)
+    df_merged = df_fbref.merge(
+        df_xg_clean[cols_to_keep],
+        on=keys,
+        how='left'
+    )
+
+    # 4. Statistiques de contrôle
+    coverage = df_merged['xg'].notna().mean()
+    print(f"Fusion terminée : {df_merged.shape[0]} lignes et {df_merged.shape[1]} colonnes.")
+    print(f"Taux de correspondance xG (Coverage) : {coverage:.1%}")
+
+    # 5. Sauvegarde optionnelle
+    if output_path:
+        df_merged.to_csv(output_path, index=False, sep=',', encoding='utf-8-sig')
+        print(f"Fichier sauvegardé sous : {output_path}")
+
+    return df_merged
+
