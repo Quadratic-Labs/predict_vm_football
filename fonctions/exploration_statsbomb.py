@@ -17,22 +17,35 @@ import unicodedata
 
 def audit_statsbomb_data(df_matches, df_lineups):
     """
-    Analyse exploratoire des données StatsBomb : NA, doublons et cohérence de liaison.
+    Réalise une analyse exploratoire des données StatsBomb.
+
+    Cette fonction vérifie la qualité du jeu de données en identifiant les doublons d'identifiants, 
+    en mesurant la complétude des colonnes critiques et en validant l'intégrité relationnelle 
+    (s'assurer que chaque match possède bien une composition d'équipe associée). Elle fournit 
+    également un aperçu rapide du volume de données par compétition.
+
+    arguments:
+        df_matches : Le dataset des matchs StatsBomb.
+        df_lineups : Le dataset des compositions d'équipe.
+
+    returns:
+        dict: Un dictionnaire contenant la liste des 'match_id' orphelins (matchs présents 
+            dans le calendrier mais n'ayant aucune donnée de lineup).
     """
-    # 1. Analyse des doublons
+    # Analyse des doublons
     match_dups = df_matches.duplicated(subset=['match_id']).sum()
     # Pour les lineups, un doublon est un même joueur deux fois dans le même match
     lineup_dups = df_lineups.duplicated(subset=['match_id', 'player_id']).sum()
     
-    # 2. Analyse des NA (Focus sur les colonnes critiques)
+    # Analyse des NA
     na_matches = df_matches[['match_id', 'home_team.home_team_name', 'away_team.away_team_name']].isnull().sum()
     na_lineups = df_lineups[['match_id', 'player_id', 'player_name']].isnull().sum()
     
-    # 3. Vérification de la liaison (Merge Check)
+    # Vérification de la liaison
     matches_in_lineups = df_lineups['match_id'].unique()
     missing_matches = df_matches[~df_matches['match_id'].isin(matches_in_lineups)]
     
-    # --- AFFICHAGE ---
+   
     print(f"AUDIT STATSBOMB")
     print(f"-------------------------------------------")
     print(f"• Matchs   : {len(df_matches)} lignes | Doublons : {match_dups}")
@@ -57,19 +70,30 @@ def audit_statsbomb_data(df_matches, df_lineups):
 
 def check_statsbomb_temporal_coverage(df_matches):
     """
-    Analyse la fenêtre temporelle des matchs StatsBomb à partir du 1er juillet 2020.
+    Analyse et valide la fenêtre temporelle des matchs StatsBomb à partir du 1er juillet 2020.
+
+    Cette fonction convertit les dates de matchs au format datetime, filtre le dataset pour 
+    ne conserver que les rencontres récentes et calcule l'étendue chronologique de la base de
+    données. 
+
+    arguments:
+        df_matches : Le dataset des matchs StatsBomb contenant au minimum la colonne 'match_date'.
+
+    returns:
+        tuple: Un tuple contenant (start_date, end_date) sous forme d'objets Timestamp.
+            Renvoie (None, None) si aucun match ne correspond aux critères de filtrage.
     """
     if 'match_date' not in df_matches.columns:
         print("Colonne 'match_date' introuvable.")
         return
 
-    # 1. Conversion en datetime
+    # Conversion en datetime
     df_matches['match_date'] = pd.to_datetime(df_matches['match_date'], errors='coerce')
     
-    # 2. Filtrage à partir du 1er juillet 2020
+    # Filtrage à partir du 1er juillet 2020
     df_filtered = df_matches[df_matches['match_date'] >= '2020-07-01'].copy()
     
-    # 3. Calculs sur les données filtrées
+    # Calculs sur les données filtrées
     dates = df_filtered['match_date']
     
     if dates.empty:
@@ -100,7 +124,19 @@ def check_statsbomb_temporal_coverage(df_matches):
 
 def plot_statsbomb_distributions(df_matches):
     """
-    Affiche la répartition des matchs par compétition et la distribution des buts.
+    Génère une analyse graphique de la répartition des matchs et de la dynamique des scores.
+
+    Cette fonction crée un diagramme en barres horizontal pour comparer le volume de données
+    par compétition, et un histogramme superposé avec une estimation de la densité
+    pour analyser la distribution des buts marqués à domicile versus à l'extérieur.
+
+    arguments:
+        df_matches: Le dataset des matchs StatsBomb contenant les colonnes 
+                                'competition.competition_name', 'home_score' et 'away_score'.
+
+    returns:
+        None: La fonction affiche directement une figure composée de deux graphiques 
+            complémentaires (Seaborn/Matplotlib).
     """
     sns.set_theme(style="whitegrid")
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
@@ -112,7 +148,7 @@ def plot_statsbomb_distributions(df_matches):
     axes[0].set_title('Répartition des Matchs par Compétition')
     axes[0].set_xlabel('Nombre de Matchs')
 
-    # Graphique 2 : Distribution des buts (Home vs Away)
+    # Graphique 2 : Distribution des buts
     goals_df = df_matches[['home_score', 'away_score']].melt()
     sns.histplot(data=goals_df, x='value', hue='variable', kde=True, 
                  element="step", ax=axes[1], palette='magma')

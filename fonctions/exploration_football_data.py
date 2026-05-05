@@ -17,9 +17,23 @@ import unicodedata
 
 def check_football_data_updates(season="2526"):
     """
-    Vérifie la date de dernière modification des fichiers CSV 
-    sur football-data.co.uk pour les 5 grands championnats.
+    Vérifie la fraîcheur des données sur football-data.co.uk pour les cinq grands championnats
+    européens.
+
+    Cette fonction interroge les en-têtes HTTP (méthode HEAD) des fichiers CSV distants pour 
+    extraire la date de dernière modification sans télécharger l'intégralité des données. 
+    Elle permet de savoir rapidement si de nouveaux résultats de matchs ont été publiés 
+    pour la saison spécifiée.
+
+    arguments:
+        season (str): Le code de la saison au format "AABB" (ex: "2526" pour 2025-2026). 
+                    Par défaut : "2526".
+
+    Returns:
+        dataframe: Un tableau récapitulatif contenant le nom de la compétition, son code 
+                    et la date (ou l'état) de la dernière mise à jour serveur.
     """
+    # Les ligues à analyser
     leagues = {
         "E0": "Premier League",
         "SP1": "Liga",
@@ -52,33 +66,42 @@ def check_football_data_updates(season="2526"):
                 "Dernière mise à jour": f"Erreur: {str(e)}"
             })
 
-    # Retourne un DataFrame pour un affichage propre
+    # Retourne un dataframe pour un affichage propre
     df_updates = pd.DataFrame(updates)
     return df_updates
 
 
 
 
-
-
 def process_football_data(df_raw):
     """
-    Filtre et nettoie le dataset Football-Data pour ne garder que le signal utile.
-    Affiche un audit structurel des données.
+    Filtre et nettoie le dataset football-data pour ne conserver que les variables essentielles.
+
+    Cette fonction effectue une sélection stratégique parmi les nombreuses colonnes du 
+    dataset d'origine pour isoler les informations de match, les statistiques de jeu et les cotes
+    de paris. Elle gère également la conversion temporelle et supprime les lignes incomplètes
+    pour garantir un signal propre pour l'analyse.
+
+    arguments:
+        df_raw : Le dataset brut chargé directement depuis football-data.co.uk.
+
+    returns:
+        dataframe: Un dataframe optimisé contenant uniquement les colonnes critiques 
+                    (Match, Stats, Cotes) avec des types de données normalisés.
     """
-    # 1. Sélection stratégique des colonnes
+    # Sélection des colonnes
     cols_match = ['Div', 'Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'FTR']
     cols_stats = ['HS', 'AS', 'HST', 'AST', 'HF', 'AF', 'HC', 'AC', 'HY', 'AY', 'HR', 'AR']
     cols_odds  = ['B365H', 'B365D', 'B365A', 'AvgH', 'AvgD', 'AvgA']
     
-    # 2. Élagage pour éviter la fragmentation (PerformanceWarning)
+    # Élagage pour éviter la fragmentation
     df = df_raw[cols_match + cols_stats + cols_odds].copy()
     
-    # 3. Nettoyage
+    # Nettoyage
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
     df = df.dropna(subset=['FTHG', 'FTAG'])
     
-    # 4. Affichage de l'Audit
+
     print(f"Audit Football-Data :")
     print(f"- Nombre de colonnes initiales : {df_raw.shape[1]}")
     print(f"- Nombre de colonnes après élagage : {df.shape[1]}")
@@ -91,19 +114,33 @@ def process_football_data(df_raw):
 
 def audit_data_quality(df, subset_duplicates=['Date', 'HomeTeam', 'AwayTeam']):
     """
-    Analyse ciblée : identifie uniquement les colonnes avec des NA 
-    et vérifie les doublons.
+    Effectue un audit ciblé de la qualité des données en isolant les valeurs manquantes
+    et les doublons.
+
+    Cette fonction permet de diagnostiquer rapidement l'état d'un dataset en se concentrant 
+    uniquement sur les variables problématiques (colonnes avec des NaN). Elle vérifie 
+    également l'existence de doublons basés sur un sous-ensemble de colonnes stratégiques 
+    (par défaut : la date et les équipes).
+
+    arguments:
+        df : Le dataframe à auditer.
+        subset_duplicates (list): Liste des colonnes à utiliser pour identifier les doublons 
+                                potentiels. Par défaut : ['Date', 'HomeTeam', 'AwayTeam'].
+
+    returns:
+        pd.DataFrame: Un résumé contenant uniquement les colonnes présentant des valeurs 
+                    manquantes et leur décompte respectif.
     """
-    # 1. Analyse des doublons
+    # Analyse des doublons
     dup_count = df.duplicated(subset=subset_duplicates).sum()
     
-    # 2. Analyse des NA par colonne
+    # Analyse des NA par colonne
     na_summary = df.isnull().sum()
     na_only = na_summary[na_summary > 0].reset_index()
     na_only.columns = ['Variable', 'Nombre de NA']
     
-    # 3. Affichage
-    print(f"ANALYSE QUALITÉ :")
+
+    print(f"Analyse qualité :")
     print(f"-------------------------------")
     print(f"• Doublons détectés : {dup_count}")
     print(f"-------------------------------")
@@ -122,20 +159,27 @@ def audit_data_quality(df, subset_duplicates=['Date', 'HomeTeam', 'AwayTeam']):
 
 
 
-
-
 def audit_football_data_coherence(df):
     """
-    Effectue un audit de cohérence logique sur le dataset Football-Data :
-    - Validité des scores (non négatifs)
-    - Cohérence entre scores et résultat final (FTR)
-    - Anomalies sur les cotes (cotes < 1)
-    - Détection de doublons (Date/Equipes)
+    Effectue un audit de cohérence logique et métier sur le dataset football-data.
+
+    Cette fonction vérifie la validité des données en croisant différentes variables.
+    Elle contrôle que les scores sont physiquement possibles (non négatifs), 
+    que le résultat final déclaré concorde avec le décompte des buts, que les 
+    cotes de paris sont réalistes et que chaque rencontre est unique dans le dataset.
+
+    arguments:
+        df : Le DataFrame contenant les données de matchs, incluant les scores, 
+                        le résultat final et les cotes.
+
+    returns:
+        dict: Un dictionnaire synthétisant le nombre d'anomalies détectées par catégorie 
+            (erreurs de score, de résultat, de cotes et doublons).
     """
-    # 1. Vérification des scores négatifs
+    # Vérification des scores négatifs
     invalid_scores = df[(df['FTHG'] < 0) | (df['FTAG'] < 0)]
     
-    # 2. Vérification de la cohérence FTR (Full Time Result)
+    # Vérification de la cohérence des résultats
     # On s'assure que le résultat 'H', 'D', 'A' correspond mathématiquement aux buts
     home_win_error = df[(df['FTR'] == 'H') & (df['FTHG'] <= df['FTAG'])]
     away_win_error = df[(df['FTR'] == 'A') & (df['FTAG'] <= df['FTHG'])]
@@ -143,7 +187,7 @@ def audit_football_data_coherence(df):
     
     total_res_errors = len(home_win_error) + len(away_win_error) + len(draw_error)
 
-    # 3. Audit des Cotes (Recherche de valeurs aberrantes < 1.0)
+    # Audit des Cotes (Recherche de valeurs aberrantes < 1.0)
     # On vérifie uniquement sur les colonnes de cotes moyennes présentes
     odd_cols = ['AvgH', 'AvgD', 'AvgA']
     present_odd_cols = [c for c in odd_cols if c in df.columns]
@@ -153,12 +197,12 @@ def audit_football_data_coherence(df):
         odd_error = df[(df[present_odd_cols] < 1).any(axis=1)]
         odd_error_count = len(odd_error)
 
-    # 4. Vérification des Doublons
+    # Vérification des Doublons
     # On utilise les colonnes d'origine ou les clés si elles existent
     dup_cols = ['Date', 'HomeTeam', 'AwayTeam']
     match_duplicates = df.duplicated(subset=dup_cols).sum()
 
-    # --- AFFICHAGE DU BILAN ---
+  
     print(f"Audit de cohérence terminé :")
     print(f"-------------------------------------------")
     print(f"• Erreurs de score (négatifs)  : {len(invalid_scores)}")
@@ -185,8 +229,19 @@ def audit_football_data_coherence(df):
 
 def check_temporal_coverage(df, date_col):
     """
-    Affiche la date de début et de fin pour une colonne spécifique d'un DataFrame.
-    Utile pour vérifier la synchronisation des sources (FBref vs Football-Data).
+    Calcule et affiche la fenêtre chronologique couverte par une colonne de date spécifique.
+
+    Cette fonction permet de valider l'étendue temporelle d'un dataset en identifiant les 
+    bornes minimales et maximales.
+
+    arguments:
+        df : Le dataframe contenant les données temporelles.
+        date_col (str): Le nom de la colonne de date à analyser.
+
+    returns:
+        tuple: Un tuple contenant (min_date, max_date) sous forme d'objets Timestamp, 
+            permettant d'utiliser ces bornes pour des filtrages ultérieurs.
+        None: Si la colonne spécifiée est absente du DataFrame.
     """
     if date_col not in df.columns:
         print(f"La colonne '{date_col}' est absente du DataFrame.")
@@ -214,9 +269,23 @@ def check_temporal_coverage(df, date_col):
 
 def analyze_league_distribution(df, league_col='Div'):
     """
-    Renomme les codes ligues en noms clairs et affiche la répartition des matchs.
+    Normalise les identifiants des ligues et analyse la distribution des matchs par compétition.
+
+    Cette fonction remplace les codes des championnats par leurs noms complets pour rendre
+    les analyses et les graphiques plus lisibles. 
+    Elle fournit ensuite un décompte précis du nombre de rencontres par ligue pour 
+    vérifier l'équilibre du dataset.
+
+    arguments:
+        df : Le dataset contenant les données de football-data.
+        league_col (str): Le nom de la colonne contenant les codes de ligues. 
+                        Par défaut : 'Div'.
+
+    returns:
+        dataframe: Une copie du dataframe original avec les noms de ligues 
+                    explicites dans la colonne cible.
     """
-    # 1. Mapping officiel des 5 grands championnats
+    # Mapping officiel des 5 grands championnats
     mapping = {
         "E0": "Premier League",
         "SP1": "Liga",
@@ -225,13 +294,13 @@ def analyze_league_distribution(df, league_col='Div'):
         "D1": "Bundesliga"
     }
     
-    # 2. Copie pour éviter de modifier le DF original par référence (si besoin)
+    # Copie pour éviter de modifier le dataframe original par référence
     df_mapped = df.copy()
     
-    # 3. Remplacement des noms
+    # Remplacement des noms
     df_mapped[league_col] = df_mapped[league_col].replace(mapping)
     
-    # 4. Calcul et affichage
+    # Calcul et affichage
     counts = df_mapped[league_col].value_counts()
     
     print("Répartition par Compétition :")
