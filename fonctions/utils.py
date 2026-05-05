@@ -462,34 +462,6 @@ def prune_fbref_columns(df_input, threshold=0.80, verbose=True):
         plt.show()
 
     limit = len(df_work) * threshold
-    cols_to_drop_na = df_work.columns[df_work.isnull().sum() > limit].tolist()
-    df_clean = df_work.drop(columns=cols_to_drop_na)
-
-    # --- 2. Gestion des Redondances ---
-    redundant_patterns = ['stats_', 'Rk', 'Born', 'Nation_']
-    cols_redundant = [col for col in df_clean.columns 
-                      if any(pat in col for pat in redundant_patterns) 
-                      and col not in ['Player', 'Min', '90s']]
-
-    if verbose and cols_redundant:
-        redundancy_summary = {pat: len([c for c in cols_redundant if pat in c]) for pat in redundant_patterns}
-        plt.figure(figsize=(8, 4))
-        sns.barplot(x=list(redundancy_summary.keys()), y=list(redundancy_summary.values()), palette='viridis', hue=list(redundancy_summary.keys()), legend=False)
-        plt.title("Répartition des colonnes redondantes identifiées")
-        plt.ylabel("Nombre de colonnes")
-        plt.show()
-
-    df_final = df_clean.drop(columns=cols_redundant)
-
-    if verbose:
-        print(f"ÉLAGAGE DES VARIABLES TERMINÉ")
-        print(f"---------------------------------------------------")
-        print(f"- Colonnes initiales : {initial_cols}")
-        print(f"- Supprimées (> {int(threshold*100)}% NA) : {len(cols_to_drop_na)}")
-        print(f"- Supprimées (Redondances) : {len(cols_redundant)}")
-        print(f"- Colonnes finales conservées : {df_final.shape[1]}")
-
-    return df_final
 
 
 
@@ -548,9 +520,13 @@ def normalize_fbref_formats(df_input):
     # On remplace les NaN par 0 (ex: un joueur sans tir a NaN en % de tirs cadrés)
     num_cols = df.select_dtypes(include=['float64', 'int64']).columns
     df[num_cols] = df[num_cols].fillna(0)
+
+    non_num_cols = df.select_dtypes(exclude=['float64', 'int64']).columns
+    df[non_num_cols] = df[non_num_cols].fillna("Unknown")
     
     print(f"Normalisation des formats terminée.")
-    print(f"- Colonnes numériques imputées : {len(num_cols)}")
+    print(f"- Colonnes numériques imputées (0) : {len(num_cols)}")
+    print(f"- Colonnes texte imputées (Unknown) : {len(non_num_cols)}")
     print(f"- Valeurs manquantes totales restantes : {df.isnull().sum().sum()}")
     
     return df
