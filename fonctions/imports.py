@@ -341,7 +341,7 @@ def get_players_advanced_stats_range(start_season, end_season, leagues=['FRA-Lig
                 continue
             cols_to_keep = merge_keys + [c for c in df.columns if c not in df_final.columns]
             df_final = df_final.merge(df[cols_to_keep], on=merge_keys, how='left')
-            print(f"  → Fusion '{stat}' : {df_final.shape[1]} colonnes")
+            print(f"  Fusion '{stat}' : {df_final.shape[1]} colonnes")
 
         # Résumé des colonnes xG dans le dataset final
         xg_final = [c for c in df_final.columns if any(x in c for x in ['xG', 'xA', 'npxG', 'Expected'])]
