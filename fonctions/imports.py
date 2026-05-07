@@ -134,6 +134,32 @@ def download_football_data_datasets(seasons, leagues) :
 
 
 
+def players_filtered(players_path, annee_debut):
+    # 1. Lecture du fichier
+    df_players = pd.read_csv(players_path)
+
+    # 2. Filtrage
+    df_players = df_players[df_players['last_season'] >= annee_debut]
+
+    # 3. Réécriture (écrase le fichier original avec les lignes filtrées)
+    df_players.to_csv(players_path, index=False)
+
+    print(f"Fichier players.csv filtré : {len(df_players)} joueurs conservés.")
+
+
+def valuations_filtered(valuations_path, annee_debut):
+    date_seuil = f"{annee_debut - 1}-08-01" 
+    # 1. Lecture
+    df_val = pd.read_csv(valuations_path)
+
+    # 2. Conversion et filtrage
+    df_val['date'] = pd.to_datetime(df_val['date'])
+    df_val = df_val[df_val['date'] >= date_seuil]
+
+    # 3. Réécriture
+    df_val.to_csv(valuations_path, index=False)
+
+    print(f"Filtrage terminé : Données conservées depuis le {date_seuil}")
 
 def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name, record_path=None, meta=None, columns_to_keep=None, recursive=False):
     """
