@@ -135,31 +135,61 @@ def download_football_data_datasets(seasons, leagues) :
 
 
 def players_filtered(players_path, annee_debut):
-    # 1. Lecture du fichier
+    """
+    Filtre le fichier des joueurs pour ne conserver que ceux actifs à partir d'une saison donnée.
+
+    arguments:
+        players_path (str): Chemin vers le fichier CSV 'players.csv'.
+        annee_debut (int): Année choisie. On conserve les joueurs dont 
+            la colonne 'last_season' est supérieure ou égale à cette valeur.
+
+    returns:
+        None: Le fichier CSV original est écrasé par les données filtrées.
+    """
+    # Lecture du fichier
     df_players = pd.read_csv(players_path)
 
-    # 2. Filtrage
+    # Filtrage
     df_players = df_players[df_players['last_season'] >= annee_debut]
 
-    # 3. Réécriture (écrase le fichier original avec les lignes filtrées)
+    # Réécriture (écrase le fichier original avec les lignes filtrées)
     df_players.to_csv(players_path, index=False)
 
     print(f"Fichier players.csv filtré : {len(df_players)} joueurs conservés.")
 
 
 def valuations_filtered(valuations_path, annee_debut):
-    date_seuil = f"{annee_debut - 1}-08-01" 
-    # 1. Lecture
+    """
+    Filtre l'historique des valeurs marchandes à partir du début de la saison précédente.
+
+    Cette fonction définit une date seuil au 1er juillet de l'année précédant 'annee_debut' 
+    pour inclure l'intégralité du cycle de valorisation de la saison de transition.
+
+    arguments:
+        valuations_path (str): Chemin vers le fichier CSV 'player_valuations.csv'.
+        annee_debut (int): Année de référence. Le filtre sera appliqué 
+            à partir du 01/07 de l'année précédente.
+
+    returns:
+        None: Le fichier CSV original est écrasé par les données filtrées.
+    """
+    date_seuil = f"{annee_debut - 1}-07-01" 
+    # Lecture
     df_val = pd.read_csv(valuations_path)
 
-    # 2. Conversion et filtrage
+    # Conversion et filtrage
     df_val['date'] = pd.to_datetime(df_val['date'])
     df_val = df_val[df_val['date'] >= date_seuil]
 
-    # 3. Réécriture
+    # Réécriture
     df_val.to_csv(valuations_path, index=False)
 
     print(f"Filtrage terminé : Données conservées depuis le {date_seuil}")
+
+
+
+
+
 
 def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name, record_path=None, meta=None, columns_to_keep=None, recursive=False):
     """
