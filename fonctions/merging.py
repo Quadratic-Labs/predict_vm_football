@@ -42,6 +42,7 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
     df_sd_clean['join_key'] = df_sd_clean['player'].apply(normalize_name)
     # On s'assure que dob_key est bien une chaîne de l'année (ex: "1998")
     df_sd_clean['dob_key'] = df_sd_clean['born'].astype(str).str.strip()
+    df_sd_clean['season_year'] = df_sd_clean['season'].astype(int)
 
     # Nettoyage de df_tm
     df_tm_clean = df_tm.copy()
@@ -51,6 +52,28 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
         df_tm_clean['last_name'].apply(normalize_name)
     ).str.strip()
     
+    df_tm_clean['valuation_year'] = pd.to_datetime(
+    df_tm_clean['date'], errors='coerce'
+    ).dt.year
+
+    id_cols = [
+        'player_id',
+        'first_name',
+        'last_name',
+        'name',
+        'date_of_birth'
+    ]
+
+    # on garde la valorisation la plus récente de l'année
+    df_tm_clean['date'] = pd.to_datetime(df_tm_clean['date'])
+
+    df_tm_clean = (
+        df_tm_clean
+        .sort_values('date')
+        .groupby(['player_id', 'valuation_year'], as_index=False)
+        .last()
+    )
+
     # Clé alternative sur le nom complet
     df_tm_clean['join_key_full'] = df_tm_clean['name'].apply(normalize_name)
     
@@ -207,10 +230,10 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, score_min=90):
 
     # Fusion finale pour récupérer les infos de Transfermarkt
     df_final = pd.merge(
-        df_with_id, 
-        df_tm_final, 
-        left_on='tm_id', 
-        right_on='player_id', 
+        df_with_id,
+        df_tm_final,
+        left_on=['tm_id', 'season_year'],
+        right_on=['player_id', 'valuation_year'],
         how='left'
     )
 
