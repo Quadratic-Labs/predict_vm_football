@@ -93,7 +93,7 @@ def download_github_dataset(repo_url, data_path):
 
 
 
-def download_football_data_datasets(annee_debut, annee_fin) :
+def download_football_data_datasets(annee_debut, annee_fin, leagues) :
     """
     Télécharge, agrège et archive localement les données de plusieurs ligues et saisons.
 
@@ -113,7 +113,21 @@ def download_football_data_datasets(annee_debut, annee_fin) :
     # Génération automatique de la liste des saisons
     seasons = [f"{str(annee)[2:]}{str(annee+1)[2:]}" for annee in range(annee_debut, annee_fin)]
 
-    leagues = ["F1", "E0", "SP1", "I1", "D1"]
+
+    mapping = {
+        "GB1": "E0",
+        "ES1": "SP1",
+        "FR1": "F1",
+        "L1": "D1",
+        "IT1": "I1"
+    }
+
+    leagues = [
+        mapping[league]
+        for league in leagues
+    ]
+
+
     # On crée un dataframe vide
     dfs = []
 
@@ -138,13 +152,9 @@ def download_football_data_datasets(annee_debut, annee_fin) :
 
 
 
-import pandas as pd
 
 
-BIG5_IDS = ["GB1", "ES1", "IT1", "L1", "FR1"]
-
-
-def players_filtered(players_path, appearances_path, annee_debut):
+def players_filtered(players_path, appearances_path, annee_debut, leagues):
     """
     Conserve les joueurs :
     - actifs à partir de annee_debut
@@ -162,7 +172,7 @@ def players_filtered(players_path, appearances_path, annee_debut):
     # Joueurs Big 5
     big5_players = set(
         df_app[
-            df_app["competition_id"].isin(BIG5_IDS)
+            df_app["competition_id"].isin(leagues)
         ]["player_id"].unique()
     )
 
@@ -182,7 +192,8 @@ def players_filtered(players_path, appearances_path, annee_debut):
 def valuations_filtered(
     valuations_path,
     appearances_path,
-    annee_debut
+    annee_debut,
+    leagues
 ):
     """
     Conserve les valorisations :
@@ -211,7 +222,7 @@ def valuations_filtered(
 
     # Apparitions Big 5
     df_big5 = df_app[
-        df_app["competition_id"].isin(BIG5_IDS)
+        df_app["competition_id"].isin(leagues)
     ]
 
     # Intervalles par joueur
@@ -330,7 +341,7 @@ def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_na
 
 locale.setlocale(locale.LC_TIME, 'English_United States.1252')
 
-def get_understat_xg(start_season, end_season, leagues=None):
+def get_understat_xg(start_season, end_season, leagues):
     """
     Récupère les statistiques avancées (xG, xA) des joueurs via le scraper Understat de Soccerdata.
 
@@ -348,9 +359,18 @@ def get_understat_xg(start_season, end_season, leagues=None):
         pd.DataFrame: Un DataFrame indexé par joueur et saison contenant les statistiques 
                     détaillées. Retourne un DataFrame vide en cas d'échec ou d'absence de données.
     """
-    if leagues is None:
-        leagues = ['ENG-Premier League', 'ESP-La Liga', 'FRA-Ligue 1',
-                   'GER-Bundesliga', 'ITA-Serie A']
+    mapping = {
+        "GB1": "ENG-Premier League",
+        "ES1": "ESP-La Liga",
+        "FR1": "FRA-Ligue 1",
+        "L1": "GER-Bundesliga",
+        "IT1": "ITA-Serie A"
+    }
+
+    leagues = [
+        mapping[league]
+        for league in leagues
+    ]
 
     # Understat utilise l'année de début de saison (ex: 2020 pour 2020-21)
     seasons_list = list(range(start_season, end_season + 1))
@@ -395,7 +415,7 @@ def flatten_columns(df):
     return df
 
 
-def get_players_advanced_stats_range(start_season, end_season, leagues=['FRA-Ligue 1']):
+def get_players_advanced_stats_range(start_season, end_season, leagues):
     """
     Récupère et fusionne l'intégralité des statistiques détaillées des joueurs via FBref.
 
@@ -414,6 +434,21 @@ def get_players_advanced_stats_range(start_season, end_season, leagues=['FRA-Lig
         dataframe: Un dataset consolidé où chaque ligne représente un joueur par saison/équipe, 
                     regroupant l'ensemble des colonnes techniques extraites.
     """
+
+    mapping = {
+        "GB1": "ENG-Premier League",
+        "ES1": "ESP-La Liga",
+        "FR1": "FRA-Ligue 1",
+        "L1": "GER-Bundesliga",
+        "IT1": "ITA-Serie A"
+    }
+
+    leagues = [
+        mapping[league]
+        for league in leagues
+    ]
+
+
     stat_types = [
         'standard',
         'keeper',
