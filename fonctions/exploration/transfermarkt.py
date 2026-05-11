@@ -323,3 +323,135 @@ def check_referential_integrity(df_players, df_valuations):
         print("Intégrité parfaite : Tous les prix sont reliés à un profil joueur.")
     
     return orphans
+
+
+
+
+def audit_valuation_frequency(df_valuations):
+    """
+    Analyse la fréquence et la régularité des mises à jour de valeur marchande
+    par joueur et par saison.
+
+    Une saison est définie du 1er juillet au 30 juin de l'année suivante.
+    Ex : saison 2022 = juillet 2022 → juin 2023.
+
+    arguments:
+        df_valuations: Le dataset historique des valuations contenant
+                       les colonnes 'player_id' et 'date'.
+
+    returns:
+        pd.DataFrame: Nombre de mises à jour par (player_id, season).
+    """
+    df = df_valuations.copy()
+    df['date'] = pd.to_datetime(df['date'])
+    df['season'] = df['date'].apply(lambda d: d.year if d.month >= 7 else d.year - 1)
+
+    updates = df.groupby(['player_id', 'season']).size().rename('n_updates')
+
+    # ── Graphique 1 : distribution du nombre de MAJ par joueur/saison ──
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    updates.value_counts().sort_index().plot(
+        kind='bar', ax=axes[0], color='steelblue'
+    )
+    axes[0].set_title("Nombre de MAJ de VM par joueur/saison")
+    axes[0].set_xlabel("Nombre de mises à jour")
+    axes[0].set_ylabel("Nombre de paires (joueur, saison)")
+    axes[0].axvline(x=updates.median() - 1, color='red', linestyle='--',
+                    label=f'Médiane : {int(updates.median())}')
+    axes[0].legend()
+
+    # ── Graphique 2 : répartition par mois (quand les MAJ ont lieu) ──
+    df['month'] = df['date'].dt.month
+    month_counts = df['month'].value_counts().sort_index()
+    month_labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
+                    'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
+    month_counts.index = [month_labels[m - 1] for m in month_counts.index]
+
+    month_counts.plot(kind='bar', ax=axes[1], color='darkcyan')
+    axes[1].set_title("Répartition des mises à jour par mois")
+    axes[1].set_xlabel("Mois")
+    axes[1].set_ylabel("Nombre de mises à jour")
+
+    plt.tight_layout()
+    plt.show()
+
+    # ── Résumé textuel ──
+    print("Statistiques — mises à jour par joueur/saison :")
+    print(f"  Médiane  : {updates.median():.0f}")
+    print(f"  Moyenne  : {updates.mean():.2f}")
+    print(f"  Max      : {updates.max()}")
+    print(f"  1 seule MAJ  : {(updates == 1).sum():,} paires joueur/saison "
+          f"({(updates == 1).mean() * 100:.1f}%)")
+    print(f"  2 MAJ        : {(updates == 2).sum():,} paires joueur/saison "
+          f"({(updates == 2).mean() * 100:.1f}%)")
+    print(f"  3+ MAJ       : {(updates >= 3).sum():,} paires joueur/saison "
+          f"({(updates >= 3).mean() * 100:.1f}%)")
+
+    return updates.reset_index()
+
+
+def aggregate_valuations_by_season(df_valuations, method='latest'):
+    """
+    Agrège les valeurs marchandes pour obtenir une VM unique par joueur et par saison.
+
+    Étant donné la fréquence médiane de 2 mises à jour par saison (mercatos de
+    juin et décembre), cette fonction permet de choisir la règle d'agrégation
+    la plus adaptée à l'usage analytique.
+
+    arguments:
+        df_valuations: Le dataset historique des valuations.
+        method (str): Règle d'agrégation parmi :
+            - 'latest'  : valeur la plus récente dans la saison (défaut recommandé)
+            - 'mean'    : moyenne des valuations de la saison
+            - 'max'     : valeur la plus haute de la saison
+
+    returns:
+        pd.DataFrame: Une ligne par (player_id, season) avec la VM agrégée
+                      et la date de référence.
+    """
+    VALID_METHODS = ('latest', 'mean', 'max')
+    if method not in VALID_METHODS:
+        raise ValueError(f"method doit être parmi {VALID_METHODS}, reçu : '{method}'")
+
+    df = df_valuations.copy()
+    df['date'] = pd.to_datetime(df['date'])
+    df['season'] = df['date'].apply(lambda d: d.year if d.month >= 7 else d.year - 1)
+    df = df.sort_values(['player_id', 'season', 'date'])
+
+    if method == 'latest':
+        df_agg = (
+            df.drop_duplicates(subset=['player_id', 'season'], keep='last')
+              .rename(columns={'date': 'date_ref'})
+        )
+    elif method == 'mean':
+        df_agg = (
+            df.groupby(['player_id', 'season'])
+              .agg(
+                  market_value_in_eur=('market_value_in_eur', 'mean'),
+                  date_ref=('date', 'last'),
+              )
+              .reset_index()
+        )
+        df_agg['market_value_in_eur'] = df_agg['market_value_in_eur'].round(0).astype(int)
+    elif method == 'max':
+        df_agg = (
+            df.groupby(['player_id', 'season'])
+              .agg(
+                  market_value_in_eur=('market_value_in_eur', 'max'),
+                  date_ref=('date', 'last'),
+              )
+              .reset_index()
+        )
+
+    result_cols = ['player_id', 'season', 'market_value_in_eur', 'date_ref']
+    df_agg = df_agg[result_cols].sort_values(['player_id', 'season']).reset_index(drop=True)
+
+    print(f"Agrégation '{method}' terminée :")
+    print(f"  Lignes avant : {len(df):,}")
+    print(f"  Lignes après : {len(df_agg):,}  (1 VM par joueur/saison)")
+    print(f"  Joueurs uniques : {df_agg['player_id'].nunique():,}")
+    saisons = sorted(df_agg['season'].unique().tolist())
+    print(f"Saisons couvertes : {saisons}")
+
+    return df_agg
