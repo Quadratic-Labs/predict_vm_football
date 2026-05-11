@@ -138,57 +138,124 @@ def download_football_data_datasets(annee_debut, annee_fin) :
 
 
 
-def players_filtered(players_path, annee_debut):
-    """
-    Filtre le fichier des joueurs pour ne conserver que ceux actifs à partir d'une saison donnée.
+import pandas as pd
 
-    arguments:
-        players_path (str): Chemin vers le fichier CSV 'players.csv'.
-        annee_debut (int): Année choisie. On conserve les joueurs dont 
-            la colonne 'last_season' est supérieure ou égale à cette valeur.
 
-    returns:
-        None: Le fichier CSV original est écrasé par les données filtrées.
+BIG5_IDS = ["GB1", "ES1", "IT1", "L1", "FR1"]
+
+
+def players_filtered(players_path, appearances_path, annee_debut):
     """
-    # Lecture du fichier
+    Conserve les joueurs :
+    - actifs à partir de annee_debut
+    - ayant joué au moins une fois dans le Big 5
+    """
+
     df_players = pd.read_csv(players_path)
+    df_app = pd.read_csv(appearances_path)
 
-    # Filtrage
-    df_players = df_players[df_players['last_season'] >= annee_debut]
+    # Filtre temporel
+    df_players = df_players[
+        df_players["last_season"] >= annee_debut
+    ]
 
-    # Réécriture (écrase le fichier original avec les lignes filtrées)
+    # Joueurs Big 5
+    big5_players = set(
+        df_app[
+            df_app["competition_id"].isin(BIG5_IDS)
+        ]["player_id"].unique()
+    )
+
+    # Filtre final
+    df_players = df_players[
+        df_players["player_id"].isin(big5_players)
+    ]
+
     df_players.to_csv(players_path, index=False)
 
-    print(f"Fichier players.csv filtré : {len(df_players)} joueurs conservés.")
+    print(
+        f"players.csv filtré : "
+        f"{len(df_players)} joueurs conservés."
+    )
 
 
-def valuations_filtered(valuations_path, annee_debut):
+def valuations_filtered(
+    valuations_path,
+    appearances_path,
+    annee_debut
+):
     """
-    Filtre l'historique des valeurs marchandes à partir du début de la saison précédente.
-
-    Cette fonction définit une date seuil au 1er juillet de l'année précédant 'annee_debut' 
-    pour inclure l'intégralité du cycle de valorisation de la saison de transition.
-
-    arguments:
-        valuations_path (str): Chemin vers le fichier CSV 'player_valuations.csv'.
-        annee_debut (int): Année de référence. Le filtre sera appliqué 
-            à partir du 01/07 de l'année précédente.
-
-    returns:
-        None: Le fichier CSV original est écrasé par les données filtrées.
+    Conserve les valorisations :
+    - après le 01/07/(annee_debut-1)
+    - pendant les périodes où le joueur évolue dans le Big 5
     """
-    date_seuil = f"{annee_debut - 1}-07-01" 
+
+    date_seuil = pd.Timestamp(
+        year=annee_debut - 1,
+        month=7,
+        day=1
+    )
+
     # Lecture
     df_val = pd.read_csv(valuations_path)
+    df_app = pd.read_csv(appearances_path)
 
-    # Conversion et filtrage
-    df_val['date'] = pd.to_datetime(df_val['date'])
-    df_val = df_val[df_val['date'] >= date_seuil]
+    # Dates
+    df_val["date"] = pd.to_datetime(df_val["date"])
+    df_app["date"] = pd.to_datetime(df_app["date"])
 
-    # Réécriture
-    df_val.to_csv(valuations_path, index=False)
+    # Filtre temporel
+    df_val = df_val[
+        df_val["date"] >= date_seuil
+    ]
 
-    print(f"Filtrage terminé : Données conservées depuis le {date_seuil}")
+    # Apparitions Big 5
+    df_big5 = df_app[
+        df_app["competition_id"].isin(BIG5_IDS)
+    ]
+
+    # Intervalles par joueur
+    intervals = (
+        df_big5
+        .groupby("player_id")["date"]
+        .agg(["min", "max"])
+        .reset_index()
+        .rename(
+            columns={
+                "min": "start_big5",
+                "max": "end_big5"
+            }
+        )
+    )
+
+    # Ajout des intervalles
+    df_val = df_val.merge(
+        intervals,
+        on="player_id",
+        how="inner"
+    )
+
+    # Filtre sur l'intervalle
+    df_val = df_val[
+        (df_val["date"] >= df_val["start_big5"])
+        & (df_val["date"] <= df_val["end_big5"])
+    ]
+
+    # Nettoyage
+    df_val = df_val.drop(
+        columns=["start_big5", "end_big5"]
+    )
+
+    # Sauvegarde
+    df_val.to_csv(
+        valuations_path,
+        index=False
+    )
+
+    print(
+        f"player_valuations.csv filtré : "
+        f"{len(df_val)} lignes conservées."
+    )
 
 
 
