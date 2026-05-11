@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 from pathlib import Path
-from kaggle.api.kaggle_api_extended import KaggleApi
 from dotenv import load_dotenv
 import json
 import requests

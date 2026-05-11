@@ -44,7 +44,6 @@ def get_kaggle_dataset_last_update(dataset_query, env_path="../.env"):
 
     try:
         api = KaggleApi()
-        api.authenticate()
 
         datasets = api.dataset_list(search=dataset_query)
 

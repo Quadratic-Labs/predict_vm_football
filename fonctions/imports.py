@@ -93,7 +93,7 @@ def download_github_dataset(repo_url, data_path):
 
 
 
-def download_football_data_datasets(seasons, leagues) :
+def download_football_data_datasets(annee_debut, annee_fin) :
     """
     Télécharge, agrège et archive localement les données de plusieurs ligues et saisons.
 
@@ -110,6 +110,10 @@ def download_football_data_datasets(seasons, leagues) :
         None: La fonction consolide les données en mémoire, les enregistre dans le dossier 
             '/data' et confirme la fin de l'opération dans la console.
     """
+    # Génération automatique de la liste des saisons
+    seasons = [f"{str(annee)[2:]}{str(annee+1)[2:]}" for annee in range(annee_debut, annee_fin)]
+
+    leagues = ["F1", "E0", "SP1", "I1", "D1"]
     # On crée un dataframe vide
     dfs = []
 
@@ -185,8 +189,6 @@ def valuations_filtered(valuations_path, annee_debut):
     df_val.to_csv(valuations_path, index=False)
 
     print(f"Filtrage terminé : Données conservées depuis le {date_seuil}")
-
-
 
 
 
