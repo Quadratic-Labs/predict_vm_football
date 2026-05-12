@@ -156,9 +156,19 @@ def download_football_data_datasets(annee_debut, annee_fin, leagues) :
 
 def players_filtered(players_path, appearances_path, annee_debut, annee_fin, leagues):
     """
-    Conserve les joueurs :
-    - actifs à partir de annee_debut
-    - ayant joué au moins une fois dans le Big 5
+    Filtre le fichier des joueurs pour ne conserver que les joueurs ayant évolué dans l'un
+    des championnats du Big 5 sur la période étudiée.
+
+    arguments:
+        players_path (str) : Chemin vers le fichier CSV contenant les informations joueurs.
+        appearances_path (str) : Chemin vers le fichier CSV contenant les apparitions en match.
+        annee_debut (int) : Première saison incluse dans l'étude.
+        annee_fin (int) : Dernière saison incluse dans l'étude.
+        leagues (list) : Liste des identifiants de compétitions correspondant au Big 5.
+
+    returns:
+        None
+            Le fichier est écrasé avec les données filtrées.
     """
 
     df_players = pd.read_csv(players_path)
@@ -192,9 +202,21 @@ def players_filtered(players_path, appearances_path, annee_debut, annee_fin, lea
 
 def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fin, leagues):
     """
-    Conserve les valorisations :
-    - après le 01/07/(annee_debut-1)
-    - pendant les périodes où le joueur évolue dans le Big 5
+    Filtre le fichier des valeurs marchandes des joueurs pour ne conserver que les
+    valorisations appartenant à la période étudiée et aux périodes durant lesquelles
+    les joueurs évoluent dans le Big 5.
+
+    arguments:
+        valuations_path (str) : Chemin vers le fichier CSV contenant les valorisations des
+            joueurs.
+        appearances_path (str) : Chemin vers le fichier CSV contenant les apparitions en match.
+        annee_debut (int) : Première saison incluse dans l'étude.
+        annee_fin (int) : Dernière saison incluse dans l'étude.
+        leagues (list) : Liste des identifiants de compétitions correspondant au Big 5.
+
+    returns:
+        None
+            Le fichier est écrasé avec les données filtrées.
     """
 
     date_debut = pd.Timestamp(
