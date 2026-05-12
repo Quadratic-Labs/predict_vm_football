@@ -677,7 +677,25 @@ class TransfermarktArchiveScraper:
 
 def run_full_injury_scraping(annee_debut, annee_fin, leagues, output_file, max_threads=12):
     """
-    Orchestre le scraping complet des blessures pour les ligues et années données.
+    Oragnise le scraping complet de l'historique des blessures pour une période donnée.
+
+    Cette fonction automatise le processus en trois phases :
+    Elle identifie les clubs présents en première division pour chaque saison 
+    et collecte les URLs de tous les joueurs ayant évolué dans ces clubs.
+    Ensuite, elle analyse les pages de blessures de chaque joueur sans synchronisation
+    pour optimiser le temps d'exécution.
+    Enfin, elle filtre les données pour ne garder que les blessures survenues en première
+    division et sauvegarde le résultat dans un fichier CSV.
+
+    arguments:
+        annee_debut (int): Première saison à analyser.
+        annee_fin (int): Dernière saison à analyser.
+        leagues (set): Ensemble des codes Transfermarkt des ligues.
+        output_file (str): Chemin complet du fichier CSV de sortie.
+        max_threads (int, optional): Nombre de requêtes simultanées.
+
+    returns:
+        dataframe: Un dataframe contenant l'historique complet des blessures filtrées.
     """
     # Initialisation du scraper
     scraper = TransfermarktArchiveScraper(max_workers=max_threads)
