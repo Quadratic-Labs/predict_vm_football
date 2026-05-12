@@ -10,6 +10,10 @@ from pathlib import Path
 import pyarrow
 import soccerdata as sd
 import locale
+import requests
+from bs4 import BeautifulSoup
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 def download_kaggle_dataset(dataset_query, destination_folder):
     """
@@ -590,3 +594,130 @@ def merge_fbref_understat(df_fbref, df_understat, output_path=None):
 
     return df_merged
 
+
+
+# Pour le chargement des données de blessures Transfermarkt
+
+class TransfermarktArchiveScraper:
+    def __init__(self, max_workers=10):
+        self.base_url = "https://www.transfermarkt.fr"
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        self.session = requests.Session()
+        self.max_workers = max_workers
+        self.dict_d1_annuel = {}
+        self.annee_limite_basse = 2020 # Valeur par défaut
+
+    def get_soup(self, url):
+        time.sleep(0.3)
+        try:
+            response = self.session.get(url, headers=self.headers, timeout=15)
+            if response.status_code == 200:
+                return BeautifulSoup(response.content, 'html.parser')
+        except:
+            return None
+
+    def get_league_clubs(self, league_url):
+        soup = self.get_soup(league_url)
+        if not soup: return []
+        table = soup.find("table", class_="items")
+        if not table: return []
+        return [self.base_url + a['href'] for a in table.select("td.zentriert.no-border-rechts a")]
+
+    def get_club_players(self, club_url):
+        soup = self.get_soup(club_url)
+        if not soup: return []
+        links = soup.select("td.hauptlink a")
+        return list(set([self.base_url + l['href'] for l in links if 'profil/spieler' in l['href']]))
+
+    def process_player(self, player_url):
+        injury_url = player_url.replace("profil", "verletzungen")
+        soup = self.get_soup(injury_url)
+        if not soup: return []
+
+        player_name = soup.find("h1").text.strip() if soup.find("h1") else "Inconnu"
+        table = soup.find("table", class_="items")
+        if not table or not table.find("tbody"): return []
+
+        injuries = []
+        for row in table.find("tbody").find_all("tr"):
+            cols = row.find_all("td")
+            if len(cols) >= 5:
+                saison_str = cols[0].text.strip()
+                try:
+                    annee_cle = 2000 + int(saison_str.split('/')[0])
+                except: continue
+
+                if annee_cle in self.dict_d1_annuel:
+                    nom_club = "Non spécifié"
+                    for img in row.find_all("img"):
+                        if img.has_attr('alt') and "spieler" not in img.get('src', ''):
+                            nom_club = img['alt']
+                            break
+                    
+                    if any(nom_club.lower() in d.lower() for d in self.dict_d1_annuel[annee_cle]):
+                        injuries.append({
+                            "Nom": player_name,
+                            "Club_Moment_Blessure": nom_club,
+                            "Saison": saison_str,
+                            "Blessure": cols[1].text.strip(),
+                            "Debut": cols[2].text.strip(),
+                            "Fin": cols[3].text.strip(),
+                            "Jours": cols[4].text.strip(),
+                            "Matchs_Manques": cols[-1].text.strip()
+                        })
+                
+                # Utilisation de la limite basse dynamique pour arrêter le scan
+                if "/" in saison_str and int(saison_str.split('/')[0]) < (self.annee_limite_basse - 2000):
+                    break
+        return injuries
+
+
+
+def run_full_injury_scraping(annee_debut, annee_fin, leagues, output_file, max_threads=12):
+    """
+    Orchestre le scraping complet des blessures pour les ligues et années données.
+    """
+    # Initialisation du scraper
+    scraper = TransfermarktArchiveScraper(max_workers=max_threads)
+    scraper.annee_limite_basse = annee_debut
+    annees = list(range(annee_debut, annee_fin + 1))
+    all_player_urls = set()
+
+    # Étape 1 : Cartographie et collecte
+    print(f"--- Étape 1 : Cartographie historique ({annee_debut}-{annee_fin}) ---")
+    for annee in annees:
+        scraper.dict_d1_annuel[annee] = []
+        print(f"  Analyse de la saison {annee}/{annee+1}...")
+        
+        for code in leagues:
+            url_ligue = f"https://www.transfermarkt.fr/ligue-1/startseite/wettbewerb/{code}/plus/?saison_id={annee}"
+            club_urls = scraper.get_league_clubs(url_ligue)
+            
+            for c_url in club_urls:
+                nom_clean = c_url.split('/')[3].replace('-', ' ').title()
+                scraper.dict_d1_annuel[annee].append(nom_clean)
+                
+                players = scraper.get_club_players(c_url)
+                all_player_urls.update(players)
+
+    print(f"--- Étape 2 : Scraping des blessures ({len(all_player_urls)} joueurs) ---")
+    final_data = []
+    with ThreadPoolExecutor(max_workers=scraper.max_workers) as executor:
+        results = list(executor.map(scraper.process_player, list(all_player_urls)))
+
+    for res in results:
+        final_data.extend(res)
+
+    # Étape 3 : Sauvegarde
+    print("--- Étape 3 : Sauvegarde des données ---")
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    df = pd.DataFrame(final_data)
+    df.to_csv(output_file, index=False, encoding='utf-8-sig')
+    
+    print(f"Terminé ! {len(df)} lignes enregistrées dans : {output_file}")
+    return df
