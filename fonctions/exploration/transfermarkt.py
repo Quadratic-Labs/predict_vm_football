@@ -402,12 +402,12 @@ def aggregate_valuations_by_season(df_valuations, method='latest'):
     arguments:
         df_valuations: Le dataset historique des valuations.
         method (str): Règle d'agrégation parmi :
-            - 'latest'  : valeur la plus récente dans la saison (défaut recommandé)
+            - 'latest'  : valeur la plus récente dans la saison
             - 'mean'    : moyenne des valuations de la saison
             - 'max'     : valeur la plus haute de la saison
 
     returns:
-        pd.DataFrame: Une ligne par (player_id, season) avec la VM agrégée
+        dataframe: Une ligne par (player_id, season) avec la valeur marchande agrégée
                       et la date de référence.
     """
     VALID_METHODS = ('latest', 'mean', 'max')
