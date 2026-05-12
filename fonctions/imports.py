@@ -154,7 +154,7 @@ def download_football_data_datasets(annee_debut, annee_fin, leagues) :
 
 
 
-def players_filtered(players_path, appearances_path, annee_debut, leagues):
+def players_filtered(players_path, appearances_path, annee_debut, annee_fin, leagues):
     """
     Conserve les joueurs :
     - actifs à partir de annee_debut
@@ -166,7 +166,8 @@ def players_filtered(players_path, appearances_path, annee_debut, leagues):
 
     # Filtre temporel
     df_players = df_players[
-        df_players["last_season"] >= annee_debut
+        (df_players["last_season"] >= annee_debut) &
+        (df_players["last_season"] <= annee_fin +1)
     ]
 
     # Joueurs Big 5
@@ -189,23 +190,25 @@ def players_filtered(players_path, appearances_path, annee_debut, leagues):
     )
 
 
-def valuations_filtered(
-    valuations_path,
-    appearances_path,
-    annee_debut,
-    leagues
-):
+def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fin, leagues):
     """
     Conserve les valorisations :
     - après le 01/07/(annee_debut-1)
     - pendant les périodes où le joueur évolue dans le Big 5
     """
 
-    date_seuil = pd.Timestamp(
+    date_debut = pd.Timestamp(
         year=annee_debut - 1,
         month=7,
         day=1
     )
+
+    date_fin = pd.Timestamp(
+        year=annee_fin + 1,
+        month=6,
+        day=30
+    )
+
 
     # Lecture
     df_val = pd.read_csv(valuations_path)
@@ -217,7 +220,8 @@ def valuations_filtered(
 
     # Filtre temporel
     df_val = df_val[
-        df_val["date"] >= date_seuil
+        (df_val["date"] >= date_debut)
+        & (df_val["date"] <= date_fin)
     ]
 
     # Apparitions Big 5
