@@ -6,6 +6,57 @@ import os
 import sys
 
 
+def prepare_transfermarkt_data(df_players, df_valuations):
+    """
+    Fusionne et nettoie les datasets Transfermarkt joueurs + valuations.
+
+    Objectifs :
+    - conserver la valeur marchande issue de player_valuations
+      (une ligne par joueur et par date)
+    - supprimer les colonnes dupliquées créées par le merge pandas
+    - harmoniser les noms de colonnes
+
+    arguments:
+        df_players (dataframe): dataset players.csv
+        df_valuations (dataframe): dataset player_valuations.csv
+
+    returns:
+        dataframe: dataframe Transfermarkt nettoyé
+    """
+
+    df_tm = pd.merge(
+        df_players,
+        df_valuations,
+        on="player_id",
+        how="inner"
+    )
+
+    # valeur marchande dynamique (historique)
+    df_tm = df_tm.rename(columns={
+        "market_value_in_eur_y": "market_value_in_eur"
+    })
+
+    # suppression des doublons issus du merge
+    cols_to_drop = [
+        "market_value_in_eur_x",
+        "current_club_id_y",
+        "current_club_name_y"
+    ]
+
+    df_tm = df_tm.drop(
+        columns=cols_to_drop,
+        errors="ignore"
+    )
+
+    # harmonisation des colonnes conservées
+    df_tm = df_tm.rename(columns={
+        "current_club_id_x": "current_club_id",
+        "current_club_name_x": "current_club_name"
+    })
+
+    return df_tm
+
+
 def match_player_data(df_mapping, df_soccerdata, df_tm):
     """
     Normalise les noms et les dates de naissance pour harmoniser trois sources de données
@@ -36,13 +87,30 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
     df_mapping_clean = df_mapping.copy()
     df_mapping_clean['PlayerFBref'] = df_mapping_clean['PlayerFBref'].apply(fix_encoding)
     df_mapping_clean['join_key'] = df_mapping_clean['PlayerFBref'].apply(normalize_name)
+    df_mapping_clean = df_mapping_clean.drop_duplicates(subset=['join_key', 'tm_id'])
 
     # Nettoyage de df_soccerdata
     df_sd_clean = df_soccerdata.copy()
     df_sd_clean['join_key'] = df_sd_clean['player'].apply(normalize_name)
     # On s'assure que dob_key est bien une chaîne de l'année (ex: "1998")
     df_sd_clean['dob_key'] = df_sd_clean['born'].astype(str).str.strip()
-    df_sd_clean['season_year'] = df_sd_clean['season'].astype(int)
+
+    def extract_season_start(season):
+        season = str(season)
+
+        if len(season) == 4 and season.startswith("20"):
+            return int(season)
+
+        if len(season) == 4:
+            return 2000 + int(season[:2])
+
+        return None
+
+
+    df_sd_clean['season_year'] = (
+        df_sd_clean['season']
+        .apply(extract_season_start)
+    )
 
     # Nettoyage de df_tm
     df_tm_clean = df_tm.copy()
@@ -222,10 +290,27 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, score_min=90):
     df_with_id = pd.concat(results, ignore_index=True)
 
     # Préparation de df_tm pour la fusion
-    df_tm_final = df_tm.rename(columns={
-        'join_key':      'tm_join_key',
+    df_tm_final = df_tm.copy()
+
+    # garder uniquement les colonnes utiles
+    cols_to_keep = [
+        'player_id',
+        'valuation_year',
+        'market_value_in_eur',
+        'date',
+        'date_of_birth',
+        'name',
+        'join_key',
+        'join_key_full',
+        'dob_key'
+    ]
+
+    df_tm_final = df_tm_final[cols_to_keep]
+
+    df_tm_final = df_tm_final.rename(columns={
+        'join_key': 'tm_join_key',
         'join_key_full': 'tm_join_key_full',
-        'dob_key':       'tm_dob_key'
+        'dob_key': 'tm_dob_key'
     })
 
     # Fusion finale pour récupérer les infos de Transfermarkt
