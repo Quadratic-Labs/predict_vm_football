@@ -686,10 +686,10 @@ def run_full_injury_scraping(annee_debut, annee_fin, leagues, output_file, max_t
     all_player_urls = set()
 
     # Étape 1 : Cartographie et collecte
-    print(f"--- Étape 1 : Cartographie historique ({annee_debut}-{annee_fin}) ---")
+    print(f"Étape 1 : Cartographie historique ({annee_debut}-{annee_fin})")
     for annee in annees:
         scraper.dict_d1_annuel[annee] = []
-        print(f"  Analyse de la saison {annee}/{annee+1}...")
+        print(f"  Analyse de la saison {annee}/{annee+1}")
         
         for code in leagues:
             url_ligue = f"https://www.transfermarkt.fr/ligue-1/startseite/wettbewerb/{code}/plus/?saison_id={annee}"
@@ -702,7 +702,7 @@ def run_full_injury_scraping(annee_debut, annee_fin, leagues, output_file, max_t
                 players = scraper.get_club_players(c_url)
                 all_player_urls.update(players)
 
-    print(f"--- Étape 2 : Scraping des blessures ({len(all_player_urls)} joueurs) ---")
+    print(f"Étape 2 : Scraping des blessures ({len(all_player_urls)} joueurs)")
     final_data = []
     with ThreadPoolExecutor(max_workers=scraper.max_workers) as executor:
         results = list(executor.map(scraper.process_player, list(all_player_urls)))
@@ -711,7 +711,7 @@ def run_full_injury_scraping(annee_debut, annee_fin, leagues, output_file, max_t
         final_data.extend(res)
 
     # Étape 3 : Sauvegarde
-    print("--- Étape 3 : Sauvegarde des données ---")
+    print("Étape 3 : Sauvegarde des données")
     output_dir = os.path.dirname(output_file)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
