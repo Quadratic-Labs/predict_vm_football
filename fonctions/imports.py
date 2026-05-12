@@ -297,7 +297,8 @@ def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fi
 
 
 
-def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name, record_path=None, meta=None, columns_to_keep=None, recursive=False):
+def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name,
+                                 record_path=None, meta=None, columns_to_keep=None, recursive=False):
     """
     Compile et normalise des fichiers JSON StatsBomb en un fichier feather unique.
 
