@@ -2,8 +2,6 @@ import pandas as pd
 import unicodedata
 import re
 from rapidfuzz import process, fuzz
-import os
-import sys
 
 
 def prepare_transfermarkt_data(df_players, df_valuations):

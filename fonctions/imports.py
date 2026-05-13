@@ -7,7 +7,6 @@ from git import Repo
 import pandas as pd
 import json
 from pathlib import Path
-import pyarrow
 import soccerdata as sd
 import locale
 import requests
