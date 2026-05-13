@@ -8,3 +8,5 @@
 .env
 !mapping_fbref_tm.csv
 /venv/*
+__pycache__/
+*.pyc
