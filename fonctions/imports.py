@@ -597,144 +597,252 @@ def merge_fbref_understat(df_fbref, df_understat, output_path=None):
 
 # Pour le chargement des données de blessures Transfermarkt
 
-class TransfermarktArchiveScraper:
+
+class TransfermarktInjuryScraper:
+
+    # Mapping code → slug pour construire les URLs correctement
+    LEAGUE_SLUGS = {
+        "FR1": "ligue-1",
+        "GB1": "premier-league",
+        "L1":  "bundesliga",
+        "IT1": "serie-a",
+        "ES1": "laliga",
+    }
+
     def __init__(self, max_workers=10):
-        self.base_url = "https://www.transfermarkt.fr"
+        self.base_url = "https://www.transfermarkt.com"
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
         }
         self.session = requests.Session()
         self.max_workers = max_workers
-        self.dict_d1_annuel = {}
-        self.annee_limite_basse = 2020 # Valeur par défaut
 
-    def get_soup(self, url):
-        time.sleep(0.3)
-        try:
-            response = self.session.get(url, headers=self.headers, timeout=15)
-            if response.status_code == 200:
-                return BeautifulSoup(response.content, 'html.parser')
-        except:
-            return None
+    def _get_soup(self, url: str, retries: int = 5):
+        for attempt in range(retries):
+            try:
+                r = self.session.get(url, headers=self.headers, timeout=15)
+                if r.status_code == 200:
+                    return BeautifulSoup(r.content, "html.parser")
+                elif r.status_code == 429:
+                    wait = 10 + attempt * 10  # 10s, 20s, 30s...
+                    print(f"      Rate limited (429), attente {wait}s...")
+                    time.sleep(wait)
+                else:
+                    time.sleep(2 + attempt * 2)
+            except Exception as e:
+                time.sleep(2 + attempt * 2)
+        return None
+    
+    def _get_soup_slow(self, url: str, retries: int = 5):
+        """Version lente pour la cartographie (pas de parallélisme)."""
+        for attempt in range(retries):
+            time.sleep(2 + attempt * 3)  # 2s, 5s, 8s, 11s, 14s
+            try:
+                r = self.session.get(url, headers=self.headers, timeout=15)
+                if r.status_code == 200:
+                    return BeautifulSoup(r.content, "html.parser")
+                elif r.status_code == 429:
+                    wait = 15 + attempt * 15
+                    print(f"      Rate limited (429), attente {wait}s...")
+                    time.sleep(wait)
+            except Exception as e:
+                print(f"      Erreur réseau (tentative {attempt+1}): {e}")
+        return None
 
-    def get_league_clubs(self, league_url):
-        soup = self.get_soup(league_url)
-        if not soup: return []
+    def get_clubs_for_season(self, league_code: str, season_year: int) -> list:
+        slug = self.LEAGUE_SLUGS.get(league_code, league_code.lower())
+        url = (
+            f"{self.base_url}/{slug}/startseite/wettbewerb"
+            f"/{league_code}/plus/?saison_id={season_year}"
+        )
+        soup = self._get_soup_slow(url)
+        
+        # DEBUG
+        if not soup:
+            print(f"      [{league_code}] Pas de réponse HTTP pour : {url}")
+            return []
+
         table = soup.find("table", class_="items")
-        if not table: return []
-        return [self.base_url + a['href'] for a in table.select("td.zentriert.no-border-rechts a")]
+        if not table:
+            # Affiche les 500 premiers caractères du HTML reçu pour diagnostiquer
+            print(f"         [{league_code}] Table 'items' introuvable. URL: {url}")
+            print(f"         HTML reçu (extrait) : {str(soup)[:500]}")
+            return []
 
-    def get_club_players(self, club_url):
-        soup = self.get_soup(club_url)
-        if not soup: return []
-        links = soup.select("td.hauptlink a")
-        return list(set([self.base_url + l['href'] for l in links if 'profil/spieler' in l['href']]))
+        clubs = []
+        for a in table.select("td.hauptlink a"):
+            href = a.get("href", "")
+            if "/startseite/verein/" in href:
+                club_id = href.split("/verein/")[1].split("/")[0]
+                clubs.append({
+                    "name":     a.text.strip(),
+                    "club_id":  club_id,
+                    "slug":     href.split("/")[1],
+                    "season":   season_year,
+                    "league":   league_code,
+                })
 
-    def process_player(self, player_url):
-        injury_url = player_url.replace("profil", "verletzungen")
-        soup = self.get_soup(injury_url)
-        if not soup: return []
+        # DEBUG
+        if not clubs:
+            print(f"      [{league_code}] Table trouvée mais aucun lien td.hauptlink. URL: {url}")
+            # Affiche les liens trouvés dans la table pour voir la vraie structure
+            all_links = table.select("a")[:5]
+            for lnk in all_links:
+                print(f"         Lien trouvé : {lnk.get('href', '')} | texte: {lnk.text.strip()}")
 
-        player_name = soup.find("h1").text.strip() if soup.find("h1") else "Inconnu"
+        return clubs
+
+    def get_players_for_club_season(self, club_slug: str, club_id: str, season_year: int) -> list:
+        url = (
+            f"{self.base_url}/{club_slug}/kader/verein/{club_id}"
+            f"/saison_id/{season_year}/plus/1"
+        )
+        soup = self._get_soup_slow(url)
+        if not soup:
+            return []
+
+        players = []
+        seen = set()
+
+        for a in soup.select("table.items td.hauptlink a"):
+            href = a.get("href", "")
+            if "/profil/spieler/" not in href:
+                continue
+            player_id = href.split("/spieler/")[1].split("/")[0]
+            if player_id in seen:
+                continue
+            seen.add(player_id)
+
+            slug = href.split("/")[1]
+            players.append({
+                "player_id":   player_id,
+                "player_slug": slug,
+                "name":        a.text.strip(),
+                "injury_url":  (
+                    f"{self.base_url}/{slug}"
+                    f"/verletzungen/spieler/{player_id}"
+                ),
+            })
+        return players
+
+    def get_player_injuries(self, player: dict) -> list:
+        soup = self._get_soup(player["injury_url"])
+        if not soup:
+            return []
+
         table = soup.find("table", class_="items")
-        if not table or not table.find("tbody"): return []
+        if not table or not table.find("tbody"):
+            return []
 
         injuries = []
         for row in table.find("tbody").find_all("tr"):
             cols = row.find_all("td")
-            if len(cols) >= 5:
-                saison_str = cols[0].text.strip()
-                try:
-                    annee_cle = 2000 + int(saison_str.split('/')[0])
-                except: continue
+            if len(cols) < 6:
+                continue
 
-                if annee_cle in self.dict_d1_annuel:
-                    nom_club = "Non spécifié"
-                    for img in row.find_all("img"):
-                        if img.has_attr('alt') and "spieler" not in img.get('src', ''):
-                            nom_club = img['alt']
-                            break
-                    
-                    if any(nom_club.lower() in d.lower() for d in self.dict_d1_annuel[annee_cle]):
-                        injuries.append({
-                            "Nom": player_name,
-                            "Club_Moment_Blessure": nom_club,
-                            "Saison": saison_str,
-                            "Blessure": cols[1].text.strip(),
-                            "Debut": cols[2].text.strip(),
-                            "Fin": cols[3].text.strip(),
-                            "Jours": cols[4].text.strip(),
-                            "Matchs_Manques": cols[-1].text.strip()
-                        })
-                
-                # Utilisation de la limite basse dynamique pour arrêter le scan
-                if "/" in saison_str and int(saison_str.split('/')[0]) < (self.annee_limite_basse - 2000):
+            # Club au moment de la blessure : image dans la dernière colonne avant les stats
+            club_moment = "Non spécifié"
+            for img in row.find_all("img"):
+                src = img.get("src", "")
+                alt = img.get("alt", "")
+                # Les logos de clubs ont une URL différente des photos joueurs
+                if "vereins" in src or ("wappen" in src):
+                    club_moment = alt
                     break
+                # Fallback : toute image qui n'est pas un joueur
+                if alt and "spieler" not in src and "player" not in src:
+                    club_moment = alt
+                    break
+
+            injuries.append({
+                "player_id":        player["player_id"],
+                "Nom":              player["name"],
+                "Club_Blessure":    club_moment,
+                "Saison":           cols[0].text.strip(),
+                "Blessure":         cols[1].text.strip(),
+                "Debut":            cols[2].text.strip(),
+                "Fin":              cols[3].text.strip(),
+                "Jours":            cols[4].text.strip(),
+                "Matchs_Manques":   cols[5].text.strip(),
+            })
         return injuries
 
 
+def run_top5_injury_scraping(
+    annee_debut: int,
+    annee_fin:   int,
+    output_file: str,
+    leagues=None,
+    max_threads: int = 10,
+) -> pd.DataFrame:
 
-def run_full_injury_scraping(annee_debut, annee_fin, leagues, output_file, max_threads=12):
-    """
-    Oragnise le scraping complet de l'historique des blessures pour une période donnée.
+    if leagues is None:
+        leagues = {"FR1", "GB1", "L1", "IT1", "ES1"}
+    if isinstance(leagues, dict):
+        league_codes = set(leagues.values())
+    else:
+        league_codes = set(leagues)
 
-    Cette fonction automatise le processus en trois phases :
-    Elle identifie les clubs présents en première division pour chaque saison 
-    et collecte les URLs de tous les joueurs ayant évolué dans ces clubs.
-    Ensuite, elle analyse les pages de blessures de chaque joueur sans synchronisation
-    pour optimiser le temps d'exécution.
-    Enfin, elle filtre les données pour ne garder que les blessures survenues en première
-    division et sauvegarde le résultat dans un fichier CSV.
+    scraper = TransfermarktInjuryScraper(max_workers=max_threads)
+    annees  = range(annee_debut, annee_fin + 1)
 
-    arguments:
-        annee_debut (int): Première saison à analyser.
-        annee_fin (int): Dernière saison à analyser.
-        leagues (set): Ensemble des codes Transfermarkt des ligues.
-        output_file (str): Chemin complet du fichier CSV de sortie.
-        max_threads (int, optional): Nombre de requêtes simultanées.
+    # Étape 1 & 2 : cartographie clubs + joueurs
+    print(f"  ÉTAPE 1/3 — Cartographie clubs & joueurs ({annee_debut}→{annee_fin})")
 
-    returns:
-        dataframe: Un dataframe contenant l'historique complet des blessures filtrées.
-    """
-    # Initialisation du scraper
-    scraper = TransfermarktArchiveScraper(max_workers=max_threads)
-    scraper.annee_limite_basse = annee_debut
-    annees = list(range(annee_debut, annee_fin + 1))
-    all_player_urls = set()
+    all_players: dict = {}
+    valid_pairs: set  = set()
 
-    # Étape 1 : Cartographie et collecte
-    print(f"Étape 1 : Cartographie historique ({annee_debut}-{annee_fin})")
     for annee in annees:
-        scraper.dict_d1_annuel[annee] = []
-        print(f"  Analyse de la saison {annee}/{annee+1}")
-        
-        for code in leagues:
-            url_ligue = f"https://www.transfermarkt.fr/ligue-1/startseite/wettbewerb/{code}/plus/?saison_id={annee}"
-            club_urls = scraper.get_league_clubs(url_ligue)
-            
-            for c_url in club_urls:
-                nom_clean = c_url.split('/')[3].replace('-', ' ').title()
-                scraper.dict_d1_annuel[annee].append(nom_clean)
-                
-                players = scraper.get_club_players(c_url)
-                all_player_urls.update(players)
+        saison_str = f"{annee % 100:02d}/{(annee + 1) % 100:02d}"
+        print(f"\n  Saison {annee}/{annee+1}")
 
-    print(f"Étape 2 : Scraping des blessures ({len(all_player_urls)} joueurs)")
-    final_data = []
+        for code in league_codes:
+            clubs = scraper.get_clubs_for_season(code, annee)
+            print(f"    [{code}] {len(clubs)} clubs trouvés")
+
+            for club in clubs:
+                players = scraper.get_players_for_club_season(
+                    club["slug"], club["club_id"], annee
+                )
+                for p in players:
+                    pid = p["player_id"]
+                    if pid not in all_players:
+                        all_players[pid] = p
+                    valid_pairs.add((pid, saison_str))
+
+    print(f"\n  {len(all_players)} joueurs uniques | {len(valid_pairs)} paires joueur/saison")
+
+    # Étape 3 : scraping des blessures
+    print(f"  ÉTAPE 2/3 — Scraping des blessures ({len(all_players)} joueurs)")
+
     with ThreadPoolExecutor(max_workers=scraper.max_workers) as executor:
-        results = list(executor.map(scraper.process_player, list(all_player_urls)))
+        results = list(executor.map(scraper.get_player_injuries, list(all_players.values())))
 
-    for res in results:
-        final_data.extend(res)
+    all_injuries = [inj for res in results for inj in res]
+    print(f"  {len(all_injuries)} blessures brutes récupérées")
 
-    # Étape 3 : Sauvegarde
-    print("Étape 3 : Sauvegarde des données")
-    output_dir = os.path.dirname(output_file)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Étape 4 : filtrage sur les saisons D1
+    def saison_courte(s: str) -> str:
+        parts = s.split("/")
+        if len(parts) == 2:
+            return f"{int(parts[0]) % 100:02d}/{parts[1][-2:]}"
+        return s
 
-    df = pd.DataFrame(final_data)
-    df.to_csv(output_file, index=False, encoding='utf-8-sig')
-    
-    print(f"Terminé ! {len(df)} lignes enregistrées dans : {output_file}")
+    filtered = [
+        inj for inj in all_injuries
+        if (inj["player_id"], saison_courte(inj["Saison"])) in valid_pairs
+    ]
+    print(f"  → {len(filtered)} blessures après filtrage D1")
+
+    # Étape 5 : sauvegarde
+    print(f"  ÉTAPE 3/3 — Sauvegarde → {output_file}")
+
+    os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
+    df = pd.DataFrame(filtered).drop(columns=["player_id"], errors="ignore")
+    df.to_csv(output_file, index=False, encoding="utf-8-sig")
+    print(f"  {len(df)} lignes enregistrées.")
     return df
