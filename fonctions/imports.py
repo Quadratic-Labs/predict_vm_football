@@ -791,7 +791,7 @@ def run_top5_injury_scraping(
     annees  = range(annee_debut, annee_fin + 1)
 
     # Étape 1 & 2 : cartographie clubs + joueurs
-    print(f"  ÉTAPE 1/3 — Cartographie clubs & joueurs ({annee_debut}→{annee_fin})")
+    print(f"  Étape 1/3 — Cartographie clubs & joueurs ({annee_debut}→{annee_fin})")
 
     all_players: dict = {}
     valid_pairs: set  = set()
@@ -817,7 +817,7 @@ def run_top5_injury_scraping(
     print(f"\n  {len(all_players)} joueurs uniques | {len(valid_pairs)} paires joueur/saison")
 
     # Étape 3 : scraping des blessures
-    print(f"  ÉTAPE 2/3 — Scraping des blessures ({len(all_players)} joueurs)")
+    print(f"  Étape 2/3 — Scraping des blessures ({len(all_players)} joueurs)")
 
     with ThreadPoolExecutor(max_workers=scraper.max_workers) as executor:
         results = list(executor.map(scraper.get_player_injuries, list(all_players.values())))
@@ -839,10 +839,18 @@ def run_top5_injury_scraping(
     print(f"  → {len(filtered)} blessures après filtrage D1")
 
     # Étape 5 : sauvegarde
-    print(f"  ÉTAPE 3/3 — Sauvegarde → {output_file}")
+    print(f"  Étape 3/3 — Sauvegarde → {output_file}")
 
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
-    df = pd.DataFrame(filtered).drop(columns=["player_id"], errors="ignore")
+
+    # On crée le dataframe
+    df = pd.DataFrame(filtered)
+    
+    # Si la colonne player_id existe, on la réordonne pour la placer tout au début
+    if "player_id" in df.columns:
+        cols = ["player_id"] + [col for col in df.columns if col != "player_id"]
+        df = df[cols]
+        
     df.to_csv(output_file, index=False, encoding="utf-8-sig")
     print(f"  {len(df)} lignes enregistrées.")
     return df
