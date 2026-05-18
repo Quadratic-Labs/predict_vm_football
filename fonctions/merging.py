@@ -112,20 +112,23 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
     # Nettoyage de df_tm
     df_tm_clean = df_tm.copy()
     
+    # Conversion de la date de valorisation en datetime (à faire plus haut pour le filtrage)
+    df_tm_clean['date'] = pd.to_datetime(df_tm_clean['date'], errors='coerce')
+
+    # --- AJOUT : Suppression du mois d'août ---
+    df_tm_clean = df_tm_clean[df_tm_clean['date'].dt.month != 8]
+    
     # Création de la clé par concaténation Prénom + Nom
     df_tm_clean['join_key'] = (
         df_tm_clean['first_name'].apply(normalize_name) + ' ' + 
         df_tm_clean['last_name'].apply(normalize_name)
     ).str.strip()
     
-    # Conversion de la date de valorisation en datetime
-    df_tm_clean['date'] = pd.to_datetime(df_tm_clean['date'], errors='coerce')
-    
-    # Calcul de l'année de début de saison (1er août au 31 juillet)
-    # En soustrayant 7 mois, le 01/08/2020 devient le 01/01/2020 -> Année 2020
-    # Le 31/07/2021 devient le 31/12/2020 -> Année 2020
+    # --- MODIFICATION : Soustraire 8 mois au lieu de 7 ---
+    # Le 01/09/2020 devient le 01/01/2020 -> Année 2020
+    # Le 31/07/2021 devient le 30/11/2020 -> Année 2020
     df_tm_clean['valuation_season_year'] = (
-        df_tm_clean['date'] - pd.DateOffset(months=7)
+        df_tm_clean['date'] - pd.DateOffset(months=8)
     ).dt.year
 
     # On trie par date pour s'assurer que la plus récente soit à la fin
