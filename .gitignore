@@ -7,6 +7,7 @@
 *.feather
 .env
 !mapping_fbref_tm.csv
+!dataset_blessures.csv
 /venv/*
 __pycache__/
 *.pyc
