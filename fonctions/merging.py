@@ -71,14 +71,14 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
         df_soccerdata (dataframe): Dataframe contenant les statistiques de jeu 
             (Soccerdata) avec les colonnes 'player' et 'born'.
         df_tm (dataframe): Dataframe issu de Transfermarkt contenant les colonnes 
-            'first_name', 'last_name', 'name' et 'date_of_birth'.
+            'first_name', 'last_name', 'name', 'date_of_birth' et 'date'.
 
     returns:
-        tuple[dataf, dataframe, dataframe]: Un triplet contenant :
+        tuple[dataframe, dataframe, dataframe]: Un triplet contenant :
             - df_mapping_clean : Mapping avec 'join_key' normalisée.
             - df_sd_clean : Statistiques SoccerData avec 'join_key' et 'dob_key' (année).
-            - df_tm_clean : Données Transfermarkt avec 'join_key' (prénom + nom), 'join_key_full' 
-              et 'dob_key' (année).
+            - df_tm_clean : Données Transfermarkt avec 'join_key', 'join_key_full',
+              'dob_key' (année) et la valorisation la plus récente par 'valuation_season_year'.
     """
     
     # Nettoyage de df_mapping (issu de worldfootballR)
@@ -104,7 +104,6 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
 
         return None
 
-
     df_sd_clean['season_year'] = (
         df_sd_clean['season']
         .apply(extract_season_start)
@@ -112,31 +111,30 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
 
     # Nettoyage de df_tm
     df_tm_clean = df_tm.copy()
+    
     # Création de la clé par concaténation Prénom + Nom
     df_tm_clean['join_key'] = (
         df_tm_clean['first_name'].apply(normalize_name) + ' ' + 
         df_tm_clean['last_name'].apply(normalize_name)
     ).str.strip()
     
-    df_tm_clean['valuation_year'] = pd.to_datetime(
-    df_tm_clean['date'], errors='coerce'
+    # Conversion de la date de valorisation en datetime
+    df_tm_clean['date'] = pd.to_datetime(df_tm_clean['date'], errors='coerce')
+    
+    # Calcul de l'année de début de saison (1er août au 31 juillet)
+    # En soustrayant 7 mois, le 01/08/2020 devient le 01/01/2020 -> Année 2020
+    # Le 31/07/2021 devient le 31/12/2020 -> Année 2020
+    df_tm_clean['valuation_season_year'] = (
+        df_tm_clean['date'] - pd.DateOffset(months=7)
     ).dt.year
 
-    id_cols = [
-        'player_id',
-        'first_name',
-        'last_name',
-        'name',
-        'date_of_birth'
-    ]
+    # On trie par date pour s'assurer que la plus récente soit à la fin
+    df_tm_clean = df_tm_clean.sort_values('date')
 
-    # on garde la valorisation la plus récente de l'année
-    df_tm_clean['date'] = pd.to_datetime(df_tm_clean['date'])
-
+    # On garde la valorisation la plus récente de la SAISON
     df_tm_clean = (
         df_tm_clean
-        .sort_values('date')
-        .groupby(['player_id', 'valuation_year'], as_index=False)
+        .groupby(['player_id', 'valuation_season_year'], as_index=False)
         .last()
     )
 
@@ -197,7 +195,7 @@ def normalize_name(name):
 
 def remove_matched(df, keys_matched):
     """
-    Filtre un DataFrame pour ne conserver que les joueurs non identifiés.
+    Filtre un dataframe pour ne conserver que les joueurs non identifiés.
 
     Cette fonction est utilisée entre chaque étape de matching pour réduire 
     le dataset 'remaining' et éviter de traiter plusieurs fois les mêmes joueurs.
@@ -293,7 +291,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, score_min=90):
     # garder uniquement les colonnes utiles
     cols_to_keep = [
         'player_id',
-        'valuation_year',
+        'valuation_season_year',
         'market_value_in_eur',
         'date',
         'date_of_birth',
@@ -316,7 +314,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, score_min=90):
         df_with_id,
         df_tm_final,
         left_on=['tm_id', 'season_year'],
-        right_on=['player_id', 'valuation_year'],
+        right_on=['player_id', 'valuation_season_year'],
         how='left'
     )
 
