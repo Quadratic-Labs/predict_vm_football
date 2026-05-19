@@ -56,7 +56,211 @@ def prepare_transfermarkt_data(df_players, df_valuations):
     return df_tm
 
 
-def match_player_data(df_mapping, df_soccerdata, df_tm):
+
+def aggregate_injuries_by_season(df_blessures):
+    """Regroupe l'historique des blessures par joueur et par saison et génère 
+    des indicateurs médicaux avancés.
+
+    Cette fonction prend un historique brut de blessures (une ligne par blessure)
+    et l'agrège pour obtenir une ligne unique par couple (joueur, saison). 
+    Elle catégorise les types de blessures à l'aide de mots-clés textuels et calcule
+    automatiquement pour chaque famille :
+    1. Le nombre exact d'occurrences (`_count`)
+    2. Le nombre total de jours d'absence cumulés (`_nb_d`)
+    3. Le nombre total de matchs manqués cumulés (`_nb_m`)
+    4. Un indicateur binaire (0 ou 1) de présence de la blessure (`injury_`)
+
+    Toute blessure ne correspondant à aucun mot-clé des familles spécifiques 
+    (musculaire, genou, etc.) est automatiquement capturée et comptabilisée 
+    dans la catégorie exclusive 'minor_unknown'.
+
+    arguments :
+        df_blessures : dataframe
+
+    returns :
+        dataframe regroupé par joueur et par saison avec les indicateurs médicaux avancés
+    """
+    df = df_blessures.copy()
+
+    # Étape 1 : Nettoyage et typage numérique
+    df["Jours_num"] = (
+        df["Jours"].astype(str).str.extract(r"(\d+)").astype(float).fillna(0)
+    )
+    df["Matchs_Manques_num"] = pd.to_numeric(
+        df["Matchs_Manques"], errors="coerce"
+    ).fillna(0)
+    df["Blessure_lower"] = df["Blessure"].astype(str).str.lower()
+
+    # Étape 2 : Définition des familles spécifiques et de leurs mots-clés associés
+    familles_specifiques = {
+        "musculaire": [
+            "muscular",
+            "hamstring",
+            "ischio",
+            "thigh",
+            "cuisse",
+            "tear",
+            "strain",
+            "adductor",
+            "groin",
+            "fibre",
+        ],
+        "genou": [
+            "knee",
+            "genou",
+            "cruciate",
+            "ligament",
+            "croisé",
+            "meniscus",
+            "ménisque",
+            "patella",
+        ],
+        "cheville_pied": [
+            "ankle",
+            "cheville",
+            "foot",
+            "pied",
+            "sprain",
+            "entorse",
+            "malleolus",
+            "achilles",
+        ],
+        "mollet_tibia": ["calf", "mollet", "shin", "tibia", "fibula"],
+        "dos_bassin": [
+            "back",
+            "dos",
+            "lumbar",
+            "lombaire",
+            "vertebra",
+            "pubalgie",
+            "pelvis",
+            "spine",
+        ],
+        "trauma_severe": [
+            "fracture",
+            "broken",
+            "surgery",
+            "opération",
+            "concussion",
+            "trauma",
+        ],
+        "medical_repos": [
+            "corona",
+            "illness",
+            "maladie",
+            "cold",
+            "grippe",
+            "influenza",
+            "infection",
+            "appendicitis",
+            "rest",
+            "repos",
+        ],
+    }
+
+    # Liste pour suivre quelles lignes ont été classées
+    # Au début, aucune ligne n'est classée (Série remplie de False)
+    est_classe = pd.Series(False, index=df.index)
+
+    # Étape 3 : Création des colonnes pour les familles spécifiques
+    for nom_famille, mots_cles in familles_specifiques.items():
+        pattern = "|".join(mots_cles)
+        mask = df["Blessure_lower"].str.contains(pattern, na=False)
+
+        # On met à jour l'indicateur global des lignes classées
+        est_classe = est_classe | mask
+
+        df[f"is_{nom_famille}"] = mask.astype(int)
+        df[f"days_{nom_famille}"] = np.where(mask, df["Jours_num"], 0)
+        df[f"matches_{nom_famille}"] = np.where(
+            mask, df["Matchs_Manques_num"], 0
+        )
+
+    # Le masque correspond à l'inverse exact de tout ce qui a été classé au-dessus
+    mask_fourre_tout = ~est_classe
+
+    df["is_minor_unknown"] = mask_fourre_tout.astype(int)
+    df["days_minor_unknown"] = np.where(mask_fourre_tout, df["Jours_num"], 0)
+    df["matches_minor_unknown"] = np.where(
+        mask_fourre_tout, df["Matchs_Manques_num"], 0
+    )
+
+    # Liste complète de toutes les familles pour la suite de l'algorithme
+    toutes_familles = list(familles_specifiques.keys()) + ["minor_unknown"]
+
+    # ÉTAPE 4 : Configuration de l'agrégation finale
+    agg_dict = {
+        "Blessure": "count",
+        "Jours_num": "sum",
+        "Matchs_Manques_num": "max",
+    }
+
+    colonnes_de_base_a_garder = [
+        col
+        for col in df_blessures.columns
+        if col
+        not in [
+            "player_id",
+            "Saison",
+            "Debut",
+            "Fin",
+            "Blessure",
+            "Jours",
+            "Matchs_Manques",
+            "Jours_num",
+            "Matchs_Manques_num",
+            "Blessure_lower",
+        ]
+    ]
+
+    for col in colonnes_de_base_a_garder:
+        agg_dict[col] = "last"
+
+    # On applique dynamiquement les agrégations pour absolument toutes les familles
+    for nom_famille in toutes_familles:
+        agg_dict[f"is_{nom_famille}"] = "sum"
+        agg_dict[f"days_{nom_famille}"] = "sum"
+        agg_dict[f"matches_{nom_famille}"] = "sum"
+
+    df_grouped = (
+        df.groupby(["player_id", "Saison"]).agg(agg_dict).reset_index()
+    )
+
+    # Étape 5 : Renommage propre des colonnes
+    rename_dict = {
+        "Blessure": "injury_nb_total",
+        "Jours_num": "injury_days_total",
+        "Matchs_Manques_num": "injury_matches_max_single",
+    }
+
+    for nom_famille in toutes_familles:
+        rename_dict[f"is_{nom_famille}"] = f"injury_{nom_famille}_count"
+        rename_dict[f"days_{nom_famille}"] = f"injury_{nom_famille}_nb_d"
+        rename_dict[f"matches_{nom_famille}"] = f"injury_{nom_famille}_nb_m"
+
+    df_grouped = df_grouped.rename(columns=rename_dict)
+
+    # Génération de la variable binaire (0 ou 1)
+    for nom_famille in toutes_familles:
+        df_grouped[f"injury_{nom_famille}"] = np.where(
+            df_grouped[f"injury_{nom_famille}_count"] > 0, 1, 0
+        )
+
+    # Étape 6 : Réorganisation esthétique des colonnes
+    colonnes_finales = (
+        ["player_id", "Saison"]
+        + colonnes_de_base_a_garder
+        + [
+            col
+            for col in df_grouped.columns
+            if col not in ["player_id", "Saison"] + colonnes_de_base_a_garder
+        ]
+    )
+
+    return df_grouped[colonnes_finales]
+
+
+def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
     """
     Normalise les noms et les dates de naissance pour harmoniser trois sources de données
     footballistiques.
@@ -146,7 +350,30 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
         .last()
     )
 
-    return df_mapping_clean, df_sd_clean, df_tm_clean
+    # Le dataframe des blessures Transfermarkt
+
+    # Fonction pour convertir le format "23/24" de Transfermarkt en année de début
+    def convert_injury_season(saison_str):
+        saison_str = str(saison_str).strip()
+        parts = saison_str.split("/")
+        if len(parts) == 2:
+            try:
+                annee_courte = int(parts[0])
+                # Gère le passage à l'an 2000 (ex: "99/00" vs "23/24")
+                if annee_courte > 50:
+                    return 1900 + annee_courte
+                else:
+                    return 2000 + annee_courte
+            except ValueError:
+                return None
+        return None
+
+    # On crée une colonne temporelle standardisée 'injury_season_year' (ex: 2023)
+    df_blessures["injury_season_year"] = df_blessures[
+        "Saison"
+    ].apply(convert_injury_season)
+
+    return df_mapping_clean, df_sd_clean, df_tm_clean, df_blessures
 
 # Fonctions nécessaires pour la synchronisation des noms FBref et ceux du mapping
 
@@ -211,7 +438,7 @@ def remove_matched(df, keys_matched):
     return df[~df['join_key'].isin(keys_matched)].copy()
 
 
-def run_player_matching(df_soccerdata, df_mapping, df_tm, score_min=90):
+def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_min=90):
     """
     Exécute un pipeline de réconciliation itératif pour lier les données SoccerData à Transfermarkt.
 
@@ -317,5 +544,38 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, score_min=90):
         right_on=['player_id', 'valuation_season_year'],
         how='left'
     )
+
+    df_blessures_final = df_blessures.copy()
+    # Supprime les colonnes portant exactement le même nom dans le df_blessures
+    df_blessures_final = df_blessures_final.loc[:, ~df_blessures_final.columns.duplicated()]
+
+    # Éviter les conflits de colonnes si d'anciennes versions de colonnes de base s'y trouvent
+    # On ne garde que la clé temporelle calculée et les variables de blessures calculées
+    cols_inj_to_keep = ["player_id", "injury_season_year"] + [
+        col
+        for col in df_blessures_final.columns
+        if col.startswith("injury_") and col != "injury_season_year"
+    ]
+    df_blessures_final = df_blessures_final[cols_inj_to_keep]
+
+    # Left join pour préserver toutes les lignes de performance construites au-dessus
+    df_final = pd.merge(
+        df_final,
+        df_blessures_final,
+        left_on=["player_id", "season_year"],
+        right_on=["player_id", "injury_season_year"],
+        how="left",
+    )
+
+    # Les joueurs sans correspondance médicale n'ont pas eu de blessures cette saison-là
+    cols_medicales = [
+        col
+        for col in df_blessures_final.columns
+        if col.startswith("injury_")
+    ]
+    df_final[cols_medicales] = df_final[cols_medicales].fillna(0)
+
+    # Suppression de la clé de jointure dupliquée devenue inutile
+    df_final = df_final.drop(columns=["injury_season_year"], errors="ignore")
 
     return df_final, remaining
