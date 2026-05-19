@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import unicodedata
 import re
 from rapidfuzz import process, fuzz
@@ -96,9 +97,6 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
     def extract_season_start(season):
         season = str(season)
 
-        if len(season) == 4 and season.startswith("20"):
-            return int(season)
-
         if len(season) == 4:
             return 2000 + int(season[:2])
 
@@ -123,21 +121,7 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
         df_tm_clean['first_name'].apply(normalize_name) + ' ' + 
         df_tm_clean['last_name'].apply(normalize_name)
     ).str.strip()
-
-    df_tm_clean['valuation_season_year'] = (
-        df_tm_clean['date'] - pd.DateOffset(months=8)
-    ).dt.year
-
-    # On trie par date pour s'assurer que la plus récente soit à la fin
-    df_tm_clean = df_tm_clean.sort_values('date')
-
-    # On garde la valorisation la plus récente de la SAISON
-    df_tm_clean = (
-        df_tm_clean
-        .groupby(['player_id', 'valuation_season_year'], as_index=False)
-        .last()
-    )
-
+    
     # Clé alternative sur le nom complet
     df_tm_clean['join_key_full'] = df_tm_clean['name'].apply(normalize_name)
     
@@ -145,6 +129,22 @@ def match_player_data(df_mapping, df_soccerdata, df_tm):
     df_tm_clean['dob_key'] = pd.to_datetime(
         df_tm_clean['date_of_birth'], errors='coerce'
     ).dt.strftime('%Y')
+
+    df_tm_clean['valuation_season_year'] = np.where(
+        df_tm_clean['date'].dt.month < 7,
+        df_tm_clean['date'].dt.year - 1,
+        df_tm_clean['date'].dt.year
+    )
+
+    # On trie par date pour s'assurer que la plus récente soit à la fin
+    df_tm_clean = df_tm_clean.sort_values('date')
+
+    # On garde la valorisation la plus récente de la saison
+    df_tm_clean = (
+        df_tm_clean
+        .groupby(['player_id', 'valuation_season_year'], as_index=False)
+        .last()
+    )
 
     return df_mapping_clean, df_sd_clean, df_tm_clean
 
