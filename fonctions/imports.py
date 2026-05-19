@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
 from git import Repo
 import pandas as pd
+import numpy as np
 import json
 from pathlib import Path
 import soccerdata as sd
@@ -417,11 +418,11 @@ def get_understat_xg(start_season, end_season, leagues):
             print(f"Colonnes : {df.columns.tolist()}")
             return df
         else:
-            print("DataFrame vide")
+            print("Dataframe vide")
             return pd.DataFrame()
 
     except Exception as e:
-        print(f"--- ERREUR ---\n{e}")
+        print(f"Erreur\n{e}")
         return pd.DataFrame()
 
 
@@ -540,7 +541,7 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
         return df_final
 
     except Exception as e:
-        print(f"\n--- ERREUR CRITIQUE ---\nDétails : {e}")
+        print(f"\nErreur critique\nDétails : {e}")
         return pd.DataFrame()
 
 
@@ -790,8 +791,8 @@ def run_top5_injury_scraping(
     scraper = TransfermarktInjuryScraper(max_workers=max_threads)
     annees  = range(annee_debut, annee_fin + 1)
 
-    # Étape 1 & 2 : cartographie clubs + joueurs
-    print(f"  Étape 1/3 — Cartographie clubs & joueurs ({annee_debut}→{annee_fin})")
+    # Étape 1 et 2 : cartographie clubs + joueurs
+    print(f"  Étape 1/3 — Cartographie clubs et joueurs ({annee_debut}→{annee_fin})")
 
     all_players: dict = {}
     valid_pairs: set  = set()
@@ -850,6 +851,24 @@ def run_top5_injury_scraping(
     if "player_id" in df.columns:
         cols = ["player_id"] + [col for col in df.columns if col != "player_id"]
         df = df[cols]
+    
+    # Temporairement, on remplace "Non spécifié" par NaN
+    df['Club_Blessure'] = df['Club_Blessure'].replace('Non spécifié', np.nan)
+
+    # On trie le DataFrame pour mettre les vrais clubs en premier au sein de chaque groupe.
+    # Ainsi, les valeurs valides se retrouveront au-dessus des NaN.
+    df = df.sort_values(by=['player_id', 'Saison', 'Club_Blessure'], na_position='last')
+
+    # On propage le vrai club vers le bas et vers le haut au sein de chaque 
+    # groupe {Joueur + Saison}
+    df['Club_Blessure'] = df.groupby(['player_id', 'Saison'])['Club_Blessure'].transform(lambda x: x.ffill().bfill())
+
+    # S'il reste des joueurs qui n'avaient aucun autre club cette saison-là, on remet
+    # "Non spécifié" pour ne pas laisser de NaN
+    df['Club_Blessure'] = df['Club_Blessure'].fillna('Non spécifié')
+
+    # On remet le dataframe dans son ordre initial
+    df = df.sort_index()
         
     df.to_csv(output_file, index=False, encoding="utf-8-sig")
     print(f"  {len(df)} lignes enregistrées.")
