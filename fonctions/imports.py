@@ -7,13 +7,19 @@ from git import Repo
 import pandas as pd
 import numpy as np
 import json
+import pathlib
 from pathlib import Path
 import soccerdata as sd
 import locale
 import requests
 from bs4 import BeautifulSoup
 import time
-from concurrent.futures import ThreadPoolExecutor
+import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
+
+# Désactive la propagation des erreurs internes du module logging
+logging.raiseExceptions = False
 
 def download_kaggle_dataset(dataset_query, destination_folder):
     """
@@ -872,4 +878,167 @@ def run_top5_injury_scraping(
         
     df.to_csv(output_file, index=False, encoding="utf-8-sig")
     print(f"  {len(df)} lignes enregistrées.")
+    return df
+
+
+
+
+# Données SoFIFA
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger(__name__)
+
+BASE_URL = "https://sofifa.com"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8",
+    "Referer": "https://sofifa.com/",
+}
+
+# Mapping entre vos codes de notebook et les IDs SoFIFA
+SOFIFA_LEAGUES = {
+    "GB1": {"id": 13, "nom": "Premier League"},
+    "ES1": {"id": 53, "nom": "La Liga"},
+    "L1":  {"id": 19, "nom": "Bundesliga"},
+    "IT1": {"id": 31, "nom": "Serie A"},
+    "FR1": {"id": 16, "nom": "Ligue 1"},
+}
+
+# Mapping de l'année de début de saison vers l'ID de version SoFIFA
+SOFIFA_SAISONS = {
+    2025: {"label": "FC 26 (2025-26)",   "version": 260052},
+    2024: {"label": "FC 25 (2024-25)",   "version": 250044},  
+    2023: {"label": "FC 24 (2023-24)",   "version": 240048},  
+    2022: {"label": "FIFA 23 (2022-23)", "version": 230053},  
+    2021: {"label": "FIFA 22 (2021-22)", "version": 220052},  
+    2020: {"label": "FIFA 21 (2020-21)", "version": 210056},  
+}
+
+def parse_table(soup: BeautifulSoup, league: str, saison: str) -> list[dict]:
+    table = soup.find("table")
+    if not table or not table.find("tbody"):
+        return []
+    players = []
+    for row in table.find("tbody").find_all("tr"):
+        cols = row.find_all("td")
+        if len(cols) < 8:
+            continue
+        try:
+            name_a    = cols[1].find("a", href=lambda h: h and "/player/" in h)
+            href      = name_a["href"] if name_a else ""
+            name      = name_a.get_text(strip=True) if name_a else "N/A"
+            pid       = href.split("/")[2] if href else ""
+            pos_tags  = cols[1].find_all("a", href=lambda h: h and "position" in h)
+            positions = "/".join(p.get_text(strip=True) for p in pos_tags) or "N/A"
+            club_a    = row.find("a", href=lambda h: h and "/team/" in h)
+            club      = club_a.get_text(strip=True) if club_a else "N/A"
+
+            players.append({
+                "saison":    saison,
+                "ligue":     league,
+                "id":        pid,
+                "nom":       name,
+                "positions": positions,
+                "age":       cols[2].get_text(strip=True),
+                "overall":   cols[3].get_text(strip=True),
+                "potentiel": cols[4].get_text(strip=True),
+                "club":      club,
+                "valeur":    cols[6].get_text(strip=True) if len(cols) > 6 else "",
+                "salaire":   cols[7].get_text(strip=True) if len(cols) > 7 else "",
+                "url":       BASE_URL + href,
+            })
+        except Exception:
+            pass
+    return players
+
+def scrape_one(league_code: str, league_id: int, league_name: str, saison_label: str, version: int) -> list[dict]:
+    all_players, offset, page = [], 0, 1
+    seen_ids = set()
+
+    with requests.Session() as session:
+        session.headers.update(HEADERS)
+        while page <= 15:
+            params = {"r": version, "set": "true", "lg": league_id, "offset": offset}
+            try:
+                resp = session.get(f"{BASE_URL}/players", params=params, timeout=15)
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, "html.parser")
+            except requests.RequestException as e:
+                log.warning(f"[{league_name} | {saison_label}] page {page} : {e}")
+                break
+
+            players = parse_table(soup, league_name, saison_label)
+            if not players:
+                break
+
+            current_ids = {p["id"] for p in players if p["id"]}
+            if current_ids and current_ids.issubset(seen_ids):
+                break
+
+            seen_ids.update(current_ids)
+            for p in players:
+                p["code_ligue_origine"] = league_code # Garde une trace de votre code ('GB1'...)
+            all_players.extend(players)
+
+            if len(players) < 60:
+                break
+
+            offset += 60
+            page   += 1
+            time.sleep(random.uniform(0.5, 1.2))
+
+    log.info(f"[{league_name} | {saison_label}] Total : {len(all_players)} joueurs")
+    return all_players
+
+def scrape_sofifa_big5(annee_debut: int, annee_fin: int, leagues_to_scrape: set, max_workers: int = 3) -> pd.DataFrame:
+    """
+    Scrape SoFIFA pour les années et codes de ligues spécifiés.
+    Exemple leagues_to_scrape: {"GB1", "ES1"}
+    Exemple années: 2020 à 2025
+    """
+    tasks = []
+    # Génération des tâches selon vos critères du notebook
+    for annee in range(annee_debut, annee_fin + 1):
+        if annee not in SOFIFA_SAISONS:
+            log.warning(f"Année {annee} non supportée dans le dictionnaire des saisons. Ignorée.")
+            continue
+        saison_info = SOFIFA_SAISONS[annee]
+        
+        for code in leagues_to_scrape:
+            if code not in SOFIFA_LEAGUES:
+                log.warning(f"Ligue code '{code}' non supportée. Ignorée.")
+                continue
+            lg_info = SOFIFA_LEAGUES[code]
+            tasks.append((code, lg_info["id"], lg_info["nom"], saison_info["label"], saison_info["version"]))
+
+    if not tasks:
+        print("Aucune tâche valide générée avec vos paramètres.")
+        return pd.DataFrame()
+
+    print(f"Lancement du scraping : {len(tasks)} tâches avec {max_workers} threads...")
+    all_data = []
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as exe:
+        futures = {
+            exe.submit(scrape_one, code, lid, lg_name, s_label, v): (lg_name, s_label)
+            for code, lid, lg_name, s_label, v in tasks
+        }
+        for future in as_completed(futures):
+            lg_name, s_label = futures[future]
+            try:
+                all_data.extend(future.result())
+            except Exception as e:
+                log.error(f"Erreur critique sur [{lg_name} | {s_label}] : {e}")
+
+    if not all_data:
+        return pd.DataFrame()
+
+    # Traitement des types et nettoyage des doublons
+    df = pd.DataFrame(all_data)
+    for col in ("age", "overall", "potentiel"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df.drop_duplicates(subset=["saison", "id"])
+    df = df.sort_values(["saison", "ligue", "overall"], ascending=[True, True, False])
+    
     return df
