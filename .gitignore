@@ -5,6 +5,7 @@
 *.parquet
 *.json
 *.feather
+*.png
 .env
 !mapping_fbref_tm.csv
 !dataset_blessures.csv
