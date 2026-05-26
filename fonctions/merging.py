@@ -335,7 +335,7 @@ def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
     ).dt.strftime('%Y')
 
     df_tm_clean['valuation_season_year'] = np.where(
-        df_tm_clean['date'].dt.month < 7,
+        df_tm_clean['date'].dt.month < 9,
         df_tm_clean['date'].dt.year - 1,
         df_tm_clean['date'].dt.year
     )
