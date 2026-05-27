@@ -95,7 +95,7 @@ def analyser_valeurs_manquantes(df, dossier_sauvegarde=None):
 
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.bar(top_missing, missing.loc[top_missing, "pct"], color="#E06C75")
-    ax.set_title("Taux de valeurs manquantes (Top 30 des colonnes > 0%)")
+    ax.set_title("Taux de valeurs manquantes")
     ax.set_ylabel("% manquant")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
@@ -280,7 +280,7 @@ def analyser_distributions_numeriques(df, cols_a_analyser=None, dossier_sauvegar
     for j in range(i + 1, len(axes)):
         axes[j].set_visible(False)
 
-    fig.suptitle("Distributions des variables numériques clés", fontsize=14, fontweight="bold")
+    fig.suptitle("Distributions de variables numériques", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
     # Gestion de la sauvegarde
@@ -636,7 +636,7 @@ def analyser_correlations(df, target_col, cols_cles=None, dossier_sauvegarde=Non
             ax=ax,
             annot_kws={"size": 9},
         )
-        ax.set_title(f"Matrice de corrélation (variables clés + {target_col})", fontsize=14, fontweight="bold")
+        ax.set_title(f"Matrice de corrélation", fontsize=14, fontweight="bold")
         plt.tight_layout()
 
         # Gestion de la sauvegarde de la Heatmap
@@ -731,7 +731,7 @@ def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_
 
     # Construction des graphiques
     fig, axes = plt.subplots(1, 2, figsize=(16, 4))
-    fig.suptitle("A1 — Profil médian par poste", fontsize=13, fontweight="bold")
+    fig.suptitle("Profil médian par poste", fontsize=13, fontweight="bold")
 
     # Graphique 1 : Heatmap du profil normalisé avec annotations réelles
     sns.heatmap(
@@ -815,7 +815,7 @@ def analyser_correlations_specifiques_poste(df, target_col, dossier_sauvegarde=N
 
     # Configuration de la grille de graphiques
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle("A2 — Corrélations spécifiques par poste", fontsize=13, fontweight="bold")
+    fig.suptitle("Corrélations spécifiques par poste", fontsize=13, fontweight="bold")
 
     # Si axes n'est pas un tableau (au cas où il n'y aurait qu'un seul graphique généré)
     if not isinstance(axes, np.ndarray):
@@ -914,7 +914,7 @@ def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
 
     # Construction de l'histogramme superposé
     fig, ax = plt.subplots(figsize=(10, 5))
-    fig.suptitle("A3 — Distribution des âges par poste", fontsize=13, fontweight="bold")
+    fig.suptitle("Distribution des âges par poste", fontsize=13, fontweight="bold")
 
     for pos, color in zip(pos_order, liste_couleurs):
         ages = df_pos[df_pos["pos_simple"] == pos]["age"].dropna()
@@ -994,7 +994,7 @@ def analyser_feature_engineering(df, target_col="valeur_marchande", dossier_sauv
 
     # Configuration de la grille de graphiques (2x2)
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
-    fig.suptitle(f"B — Features engineered vs {target_col}", fontsize=13, fontweight="bold")
+    fig.suptitle(f"Features engineered vs {target_col}", fontsize=13, fontweight="bold")
     axes = axes.flatten()
 
     # Boucle de traçage des graphiques
@@ -1124,7 +1124,7 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
         cbar_kws={"label": f"VM médiane (M€)"}
     )
     
-    ax.set_title(f"B2 — {target_col} médiane (M€) par championnat × poste", fontsize=13, fontweight="bold")
+    ax.set_title(f"{target_col} médiane (M€) par championnat × poste", fontsize=13, fontweight="bold")
     ax.set_xlabel("Poste")
     ax.set_ylabel("Championnat")
     plt.tight_layout()
@@ -1194,7 +1194,7 @@ def analyser_distribution_violin_league(df, target_col, dossier_sauvegarde=None,
 
     # Génération du Violin plot Matplotlib
     fig, ax = plt.subplots(figsize=(14, 6))
-    fig.suptitle(f"B3 — Distribution de {target_col} par championnat (violin)", fontsize=13, fontweight="bold")
+    fig.suptitle(f"Distribution de {target_col} par championnat", fontsize=13, fontweight="bold")
     
     parts = ax.violinplot(data_violin, showmedians=True, showextrema=False)
     
@@ -1270,7 +1270,7 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
 
     # Création des boxplots comparatifs
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle(f"C1 — Profil des joueurs à {target_col} ≥ 100M€ vs reste", fontsize=13, fontweight="bold")
+    fig.suptitle(f"Profil des joueurs à {target_col} ≥ 100M€ vs reste", fontsize=13, fontweight="bold")
 
     # Utilisation d'une copie locale pour éviter d'ajouter de façon permanente la colonne 'group' au df global
     df_local = df.copy()
@@ -1387,7 +1387,7 @@ def analyser_residus_regression(df, target_col, dossier_sauvegarde=None, couleur
 
     # Construction de la figure (1 ligne, 2 colonnes)
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    fig.suptitle(f"C2 — Résidus de la régression xG → log({target_col})", fontsize=13, fontweight="bold")
+    fig.suptitle(f"Résidus de la régression xG → log({target_col})", fontsize=13, fontweight="bold")
 
     # Graphique 1 : Nuage de points xG vs Cible brute (M€)
     for group, color in color_map.items():
@@ -1416,7 +1416,7 @@ def analyser_residus_regression(df, target_col, dossier_sauvegarde=None, couleur
     )
     axes[0].set_xlabel("xG")
     axes[0].set_ylabel(f"{target_col} (M€)")
-    axes[0].set_title("xG vs VM — outliers mis en évidence")
+    axes[0].set_title("xG vs VM")
     axes[0].legend()
 
     # Graphique 2 : Distribution des résidus
@@ -1704,7 +1704,7 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
 
     # Configuration de la figure (1 ligne, 2 colonnes)
     fig, axes = plt.subplots(1, 2, figsize=(16, 5))
-    fig.suptitle("D3 — Évolution temporelle", fontsize=13, fontweight="bold")
+    fig.suptitle("Évolution temporelle", fontsize=13, fontweight="bold")
 
     seasons = vm_season.index.tolist()
 
@@ -1726,7 +1726,7 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
         lw=2, 
         linestyle="--"
     )
-    axes[0].set_title(f"Moyenne & Médiane de {target_col} par saison")
+    axes[0].set_title(f"Moyenne et Médiane de {target_col} par saison")
     axes[0].set_ylabel("VM (M€)")
     axes[0].legend()
     plt.setp(axes[0].xaxis.get_majorticklabels(), rotation=30, ha="right")
