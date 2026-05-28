@@ -706,7 +706,6 @@ def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_
         "xA": "xa",
         "Buts": "Performance_Gls",
         "Assists": "Performance_Ast",
-        "Minutes": "Playing Time_Min",
         "J. blessés": "injury_days_total",
         "Nb blessures": "injury_nb_total",
         "VM (M€)": target_col,
