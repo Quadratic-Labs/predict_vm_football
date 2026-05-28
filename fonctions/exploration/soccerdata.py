@@ -146,7 +146,9 @@ def audit_coverage_by_season(df, title="Couverture par saison et ligue"):
     coverage = df_plot.groupby(['season', 'league']).size().unstack(fill_value=0)
 
     fig, ax = plt.subplots(figsize=(12, 5))
-    coverage.plot(kind='bar', ax=ax, colormap='tab10')
+
+    colors = sns.color_palette("Blues_d", n_colors=len(coverage.columns))
+    coverage.plot(kind='bar', ax=ax, color=colors, edgecolor='white', linewidth=0.5)
     ax.set_title(title, fontsize=13)
     ax.set_xlabel("Saison")
     ax.set_ylabel("Nombre de joueurs")

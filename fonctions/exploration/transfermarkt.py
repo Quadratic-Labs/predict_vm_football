@@ -165,43 +165,75 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
 
 
 def check_all_missing_values(df, title="Valeurs manquantes par colonne"):
-    """
-    Identifie et visualise le pourcentage de valeurs manquantes pour chaque colonne du DataFrame.
+    """Identifie et visualise le pourcentage de valeurs manquantes pour chaque 
+    colonne du DataFrame.
 
-    Cette fonction calcule le taux de complétude des données et génère un graphique à barres 
-    présentant uniquement les colonnes contenant des valeurs nulles. Elle inclut un 
-    seuil critique visuel à 20%.
+    Cette fonction calcule le taux de complétude des données et génère un
+    graphique à barres présentant uniquement les colonnes contenant des valeurs
+    nulles. Elle inclut un seuil critique visuel à 20%.
 
     arguments:
         df : Le DataFrame à analyser.
-        title (str): Le titre personnalisé pour le graphique. 
+        title (str): Le titre personnalisé pour le graphique.
                     Par défaut : "Valeurs manquantes par colonne".
 
     returns:
-        None: La fonction affiche un message texte si aucune valeur manquante n'est trouvée, 
-            ou un graphique le cas échéant.
+        None: La fonction affiche un message texte si aucune valeur manquante
+        n'est trouvée, ou un graphique le cas échéant.
     """
-    # Calcul du % de manquants pour chaque colonne
-    missing_pct = (df.isnull().sum() / len(df)) * 100
-    
-    # On ne garde que les colonnes qui ont des manquants (> 0)
-    missing_pct = missing_pct[missing_pct > 0].sort_values(ascending=False)
+    # Calcul du taux de complétude global initial (Toutes variables confondues)
+    total_cells = df.size
+    total_missing_initial = df.isnull().sum().sum()
+    completeness_initial = (
+        (total_cells - total_missing_initial) / total_cells
+    ) * 100
 
-    if missing_pct.empty:
+    # Calcul du % de manquants par colonne pour le tri/graphique
+    missing_pct_per_col = (df.isnull().sum() / len(df)) * 100
+
+    # Identification des colonnes à exclure (au-dessus du seuil de 20%)
+    cols_above_20 = missing_pct_per_col[missing_pct_per_col > 20].index
+    df_filtered = df.drop(columns=cols_above_20)
+
+    # Calcul du taux de complétude global après filtration
+    total_cells_filtered = df_filtered.size
+    total_missing_filtered = df_filtered.isnull().sum().sum()
+
+    # Gestion du cas où le df filtré deviendrait vide
+    if total_cells_filtered > 0:
+        completeness_filtered = (
+            (total_cells_filtered - total_missing_filtered)
+            / total_cells_filtered
+        ) * 100
+    else:
+        completeness_filtered = 0.0
+
+    print(f"Complétude globale - {title}")
+    print(f"• Taux de complétude initial (toutes variables) : {completeness_initial:.2f}%")
+    print(f"• Taux de complétude après retrait des variables > 20% de NA : {completeness_filtered:.2f}%")
+    if len(cols_above_20) > 0:
+        print(f"  (Variables retirées ({len(cols_above_20)}) : {', '.join(cols_above_20)})")
+
+    # Préparation du graphique (uniquement sur les colonnes avec manquants)
+    missing_pct_plot = missing_pct_per_col[missing_pct_per_col > 0].sort_values(
+        ascending=False
+    )
+
+    if missing_pct_plot.empty:
         print(f"Aucune valeur manquante détectée dans le dataset : {title}")
         return
 
     plt.figure(figsize=(15, 6))
-    sns.barplot(x=missing_pct.index, y=missing_pct.values, palette="Reds_r")
-    
-    plt.title(f"{title} (%)", fontsize=14)
+    sns.barplot(x=missing_pct_plot.index, y=missing_pct_plot.values, palette="Reds_r")
+
+    plt.title(f"{title} (%)", fontsize=14, weight="bold")
     plt.ylabel("% de NaN")
-    plt.xticks(rotation=45, ha='right')
-    
+    plt.xticks(rotation=45, ha="right")
+
     # Seuil d'alerte à 20%
-    plt.axhline(y=20, color='black', linestyle='--', label="Seuil critique (20%)")
+    plt.axhline(y=20, color="black", linestyle="--", label="Seuil critique (20%)")
     plt.legend()
-    
+
     plt.tight_layout()
     plt.show()
 
