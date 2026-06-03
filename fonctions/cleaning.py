@@ -94,50 +94,38 @@ def verifier_doublons_metier_et_techniques(dataframe):
 
 
 
-def nettoyer_doublons_techniques(df, chemin_sauvegarde=None):
-    """Trie la base de données pour conserver la ligne la plus complète
+def fusionner_doublons_techniques(df, chemin_sauvegarde=None):
+    """Fusionne les doublons techniques (Joueur + Saison + Club) en combinant
 
-    (le moins de valeurs manquantes) pour chaque couple Joueur + Saison + Club,
-    puis supprime les doublons techniques.
+    les informations de toutes les lignes pour ne perdre aucune donnée.
     """
     print(f"Format initial de la base : {df.shape}")
 
-    # Copie du DataFrame pour éviter de modifier l'original par effet de bord
+    # Copie de sécurité
     df_travail = df.copy()
 
-    # Ajouter un compteur de valeurs manquantes par ligne
-    df_travail["nb_manquants_ligne"] = df_travail.isnull().sum(axis=1)
+    # On trie le dataset par nos clés métier
+    df_tri = df_travail.sort_values(by=["player", "season", "team"])
 
-    # Tri par Joueur, Saison, Club, ET par le nombre de manquants CROISSANT
-    # Ainsi, la ligne avec le MOINS de NaN se retrouve tout en haut du groupe
-    df_tri_tech = df_travail.sort_values(
-        by=["player", "season", "team", "nb_manquants_ligne"],
-        ascending=[True, True, True, True],
-    )
-
-    # Suppression des doublons en gardant la première occurrence (la plus complète)
-    df_sans_doublons_tech = df_tri_tech.drop_duplicates(
-        subset=["player", "season", "team"], keep="first"
-    ).copy()
-
-    # Nettoyage : On supprime la colonne de calcul temporaire
-    df_sans_doublons_tech = df_sans_doublons_tech.drop(
-        columns=["nb_manquants_ligne"]
-    )
+    # Utilisation de groupby + first()
+    # .first() dans un groupby Pandas prend automatiquement la première valeur NON-NAN
+    # trouvée pour CHAQUE colonne de manière indépendante.
+    df_fusionne = df_tri.groupby(
+        ["player", "season", "team"], as_index=False
+    ).first()
 
     print(
-        f"Format après suppression des doublons techniques (ligne la plus complète gardée) : {df_sans_doublons_tech.shape}"
+        f"Format après fusion intelligente des doublons : {df_fusionne.shape}"
     )
 
-    # Sauvegarde optionnelle si un chemin est fourni
+    # Sauvegarde optionnelle
     if chemin_sauvegarde:
-        df_sans_doublons_tech.to_csv(chemin_sauvegarde, index=False)
-        print(f" Base de données sauvegardée avec succès dans : {chemin_sauvegarde}")
+        df_fusionne.to_csv(chemin_sauvegarde, index=False)
+        print(f"Base fusionnée sauvegardée dans : {chemin_sauvegarde}")
 
-    return df_sans_doublons_tech
+    return df_fusionne
 
 
-import pandas as pd
 
 
 def verifier_doublons_mercato(df):
