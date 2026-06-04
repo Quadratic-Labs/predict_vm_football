@@ -525,7 +525,12 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         'name',
         'join_key',
         'join_key_full',
-        'dob_key'
+        'dob_key',
+        'sub_position',
+        'position',
+        'foot',
+        'height_in_cm',
+        'contract_expiration_date'
     ]
 
     df_tm_final = df_tm_final[cols_to_keep]
