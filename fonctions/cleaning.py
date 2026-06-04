@@ -172,6 +172,162 @@ def verifier_doublons_mercato(df):
         )
 
 
+
+
+def fusionner_et_recalculer_mercato(df):
+    """Fusionne les doublons liés au mercato (Joueur + Saison), puis recalcule
+
+    exactement toutes les variables de ratio et statistiques par 90 minutes.
+    """
+    print(f"Format avant fusion mercato : {df.shape}")
+
+    aggregation_rules = {}
+
+    # Mots-clés des variables numériques à conserver telles quelles (sans somme)
+    # Plus souple et sécurisé contre les variantes de casse ou d'espaces
+    mots_cles_exceptions = [
+        "born",
+        "market_value",
+        "value_in_eur",
+        "season_year",
+        "dob_key",
+        "tm_id",
+        "player_id",
+        "valuation_season_year",
+        "tm_dob_key",
+    ]
+
+    # Liste automatique des colonnes numériques
+    cols_numeriques = df.select_dtypes(include=[np.number]).columns.tolist()
+
+
+    for col in df.columns:
+        # On ignore les clés du groupby
+        if col in ["player", "season"]:
+            continue
+
+        col_lower = col.lower().strip()
+
+        # Priorité 1 : Les exceptions techniques à ne pas modifier (Dernier en date)
+        if any(keyword in col_lower for keyword in mots_cles_exceptions):
+            aggregation_rules[col] = "last"
+
+        # Priorité 2 : Les colonnes de pourcentage (%) ou ratios intermédiaires (Moyenne)
+        elif (
+            "pct" in col_lower
+            or "%" in col
+            or "rate" in col_lower
+            or "accuracy" in col_lower
+            or "/90" in col_lower
+            or "per 90" in col_lower
+            or "playing time_mn/mp" in col_lower
+            or "starts_mn/starts" in col_lower
+            or "/starts" in col_lower
+            or "subs_mn/subs" in col_lower
+        ):
+            aggregation_rules[col] = "mean"
+
+        # Priorité 3 : Les autres colonnes numériques (Buts, Minutes, Passes...) (Somme)
+        elif col in cols_numeriques:
+            aggregation_rules[col] = "sum"
+
+        # Priorité 4 : Les colonnes textuelles (team, league...) (Dernier club en date)
+        else:
+            aggregation_rules[col] = "last"
+
+    # Application de la fusion par GroupBy après un tri chronologique/alphabétique
+    df_tri = df.sort_values(by=["player", "season"])
+    df_fusion_mercato = df_tri.groupby(
+        ["player", "season"], as_index=False
+    ).agg(aggregation_rules)
+
+    print(f"Format après fusion mercato : {df_fusion_mercato.shape}")
+
+
+    print("Recalcul des ratios et statistiques par 90 minutes...")
+
+    # Gestion des divisions par zéro
+    # On remplace temporairement les 0 par des NaN dans les dénominateurs
+    t90s = df_fusion_mercato["Playing Time_90s"].replace(0, np.nan)
+    sh = df_fusion_mercato["Standard_Sh"].replace(0, np.nan)
+    sot = df_fusion_mercato["Standard_SoT"].replace(0, np.nan)
+    mp = df_fusion_mercato["Playing Time_MP"].replace(0, np.nan)
+
+
+    # Ratios de buts et passes décisives par 90 minutes
+    df_fusion_mercato["Per 90 Minutes_Gls"] = (
+        df_fusion_mercato["Performance_Gls"] / t90s
+    )
+    df_fusion_mercato["Per 90 Minutes_Ast"] = (
+        df_fusion_mercato["Performance_Ast"] / t90s
+    )
+    df_fusion_mercato["Per 90 Minutes_G+A"] = (
+        df_fusion_mercato["Per 90 Minutes_Gls"]
+        + df_fusion_mercato["Per 90 Minutes_Ast"]
+    )
+
+    # Efficacité face au but (Buts par tir et par tir cadré)
+    df_fusion_mercato["Standard_G/Sh"] = (
+        df_fusion_mercato["Standard_Gls"] / sh
+    )
+    df_fusion_mercato["Standard_G/SoT"] = (
+        df_fusion_mercato["Standard_Gls"] / sot
+    )
+
+    # Précision des tirs (% de tirs cadrés)
+    df_fusion_mercato["Standard_SoT%"] = (
+        df_fusion_mercato["Standard_SoT"] / sh
+    ) * 100
+
+    # Volume de tirs par 90 minutes
+    df_fusion_mercato["Standard_Sh/90"] = (
+        df_fusion_mercato["Standard_Sh"] / t90s
+    )
+    df_fusion_mercato["Standard_SoT/90"] = (
+        df_fusion_mercato["Standard_SoT"] / t90s
+    )
+
+    # Gestion du temps de jeu (Minutes par match et % de minutes jouées)
+    df_fusion_mercato["Playing Time_Mn/MP"] = (
+        df_fusion_mercato["Playing Time_Min"] / mp
+    )
+    df_fusion_mercato["Playing Time_Min%"] = (
+        df_fusion_mercato["Playing Time_Min"] / (mp * 90)
+    ) * 100
+
+    # Nettoyage et finitions
+    list_recalcul = [
+        "Per 90 Minutes_Gls",
+        "Per 90 Minutes_Ast",
+        "Per 90 Minutes_G+A",
+        "Standard_G/Sh",
+        "Standard_G/SoT",
+        "Standard_SoT%",
+        "Standard_Sh/90",
+        "Standard_SoT/90",
+        "Playing Time_Mn/MP",
+        "Playing Time_Min%",
+    ]
+
+    # Remplacement des infinis (générés par x / 0) et des NaN par des 0 propres
+    for col in list_recalcul:
+        if col in df_fusion_mercato.columns:
+            df_fusion_mercato[col] = df_fusion_mercato[col].replace(
+                [np.inf, -np.inf], np.nan
+            )
+            df_fusion_mercato[col] = df_fusion_mercato[col].fillna(0)
+
+    # Limitation stricte à 2 chiffres après la virgule
+    df_fusion_mercato[list_recalcul] = df_fusion_mercato[list_recalcul].round(2)
+
+    print(
+        "Base de données fusionnée et variables recalculées avec exactitude.\n"
+    )
+
+    return df_fusion_mercato
+
+
+
 def diagnostiquer_valeurs_manquantes(df, seuil=0.30):
     """Analyse, affiche et retourne les colonnes dont le taux de valeurs manquantes
 
