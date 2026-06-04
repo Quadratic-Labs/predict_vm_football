@@ -319,6 +319,7 @@ def fusionner_et_recalculer_mercato(df):
 
     # Limitation stricte à 2 chiffres après la virgule
     df_fusion_mercato[list_recalcul] = df_fusion_mercato[list_recalcul].round(2)
+    df_fusion_mercato = df_fusion_mercato.fillna(0)
 
     print(
         "Base de données fusionnée et variables recalculées avec exactitude.\n"
@@ -364,52 +365,6 @@ def diagnostiquer_valeurs_manquantes(df, seuil=0.30):
     return liste_colonnes_vides
 
 
-
-
-
-def nettoyer_colonnes_vides(df, seuil=0.80):
-    """Identifie et supprime les colonnes du DataFrame qui dépassent
-
-    un certain seuil de valeurs manquantes (par défaut 80%).
-    """
-    print(
-        f"Nettoyage des valeurs manquantes (Seuil > {seuil*100:.0f}%)"
-    )
-
-    # Calcul du taux de valeurs manquantes
-    taux_manquants = df.isnull().mean()
-
-    # Isolation des colonnes qui dépassent le seuil
-    colonnes_vides_serie = taux_manquants[taux_manquants > seuil].sort_values(
-        ascending=False
-    )
-
-    # Copie du dataframe pour éviter les avertissements
-    df_nettoye = df.copy()
-
-    if not colonnes_vides_serie.empty:
-        # Affichage pour le suivi utilisateur
-        print(f"Colonnes avec plus de {seuil*100:.0f}% de valeurs manquantes :")
-        for col, tx in colonnes_vides_serie.items():
-            print(f"   • {col} : {tx*100:.1f}% de valeurs manquantes")
-
-        # Extraction de la liste des noms de colonnes
-        listes_cols_a_supprimer = colonnes_vides_serie.index.tolist()
-
-        # Suppression des colonnes
-        df_nettoye = df_nettoye.drop(
-            columns=listes_cols_a_supprimer, errors="ignore"
-        )
-        print(
-            f"\nSuccès : {len(listes_cols_a_supprimer)} colonnes ont été supprimées du dataset."
-        )
-    else:
-        print(
-            f"   • Aucune colonne ne dépasse {seuil*100:.0f}% de lignes vides."
-        )
-
-
-    return df_nettoye
 
 
 
