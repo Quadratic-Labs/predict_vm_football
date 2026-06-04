@@ -315,7 +315,6 @@ def fusionner_et_recalculer_mercato(df):
             df_fusion_mercato[col] = df_fusion_mercato[col].replace(
                 [np.inf, -np.inf], np.nan
             )
-            df_fusion_mercato[col] = df_fusion_mercato[col].fillna(0)
 
     # Limitation stricte à 2 chiffres après la virgule
     df_fusion_mercato[list_recalcul] = df_fusion_mercato[list_recalcul].round(2)
