@@ -319,7 +319,6 @@ def fusionner_et_recalculer_mercato(df):
 
     # Limitation stricte à 2 chiffres après la virgule
     df_fusion_mercato[list_recalcul] = df_fusion_mercato[list_recalcul].round(2)
-    df_fusion_mercato = df_fusion_mercato.fillna(0)
 
     print(
         "Base de données fusionnée et variables recalculées avec exactitude.\n"

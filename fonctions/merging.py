@@ -27,7 +27,7 @@ def prepare_transfermarkt_data(df_players, df_valuations):
         df_players,
         df_valuations,
         on="player_id",
-        how="inner"
+        how="left"
     )
 
     # valeur marchande dynamique (historique)
@@ -317,8 +317,6 @@ def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
     # Conversion de la date de valorisation en datetime (à faire plus haut pour le filtrage)
     df_tm_clean['date'] = pd.to_datetime(df_tm_clean['date'], errors='coerce')
 
-    # Suppression du mois d'août
-    df_tm_clean = df_tm_clean[df_tm_clean['date'].dt.month != 8]
     
     # Création de la clé par concaténation Prénom + Nom
     df_tm_clean['join_key'] = (
