@@ -482,9 +482,7 @@ def encoder_dataset_football(
 
     cols_a_traiter = list(colonnes_categoriques)
 
-    # ==============================================================================
-    # 1. ENCODAGE DE LA NATION EN 10 COLONNES BINAIRES DE CLASSEMENT FIFA
-    # ==============================================================================
+    # Encodage des nationalités selon le classement FIFA
     if "nation" in cols_a_traiter:
         cols_a_traiter.remove("nation")
 
@@ -529,9 +527,7 @@ def encoder_dataset_football(
                 "⚠️ Impossible d'appliquer le filtre FIFA (df_fifa_historique manquant ou colonne 'nation' absente)."
             )
 
-    # ==============================================================================
-    # 2. TRAITEMENT DE LA POSITION (MULTI-LABEL)
-    # ==============================================================================
+    # Traitement de la position
     if "pos" in cols_a_traiter:
         cols_a_traiter.remove("pos")
 
@@ -564,9 +560,7 @@ def encoder_dataset_football(
                 df_encoded = pd.concat([df_encoded, df_postes_encodes], axis=1)
                 df_encoded = df_encoded.drop(columns=["pos"])
 
-    # ==============================================================================
-    # 3. ENCODAGE ONE-HOT CLASSIQUE (League, Foot, etc.)
-    # ==============================================================================
+    # Encodage des autres variables
     variables_finales_a_encoder = [
         col for col in cols_a_traiter if col in df_encoded.columns
     ]

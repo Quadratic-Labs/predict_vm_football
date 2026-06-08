@@ -1062,11 +1062,9 @@ def extraire_classement_fin_saison(
     # Conversion de la date
     df["rank_date"] = pd.to_datetime(df["rank_date"])
 
-    # FILTRE DYNAMIQUE DE L'ANNÉE DE DÉBUT (1er septembre de l'année choisie)
     date_debut_limite = f"{annee_debut}-09-01"
     df = df[df["rank_date"] >= date_debut_limite].copy()
 
-    # FILTRE DYNAMIQUE DE L'ANNÉE DE FIN (Si spécifiée, on s'arrête au 31 août de l'année de fin)
     if annee_fin is not None:
         date_fin_limite = f"{int(annee_fin) + 1}-08-31"
         df = df[df["rank_date"] <= date_fin_limite].copy()
