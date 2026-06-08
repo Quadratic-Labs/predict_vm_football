@@ -1042,3 +1042,64 @@ def scrape_sofifa_big5(annee_debut: int, annee_fin: int, leagues_to_scrape: set,
     df = df.sort_values(["saison", "ligue", "overall"], ascending=[True, True, False])
     
     return df
+
+
+
+
+# Données du classement FIFA
+
+def extraire_classement_fin_saison(
+    df_fifa, nombre_equipes=10, annee_debut=2020, annee_fin=None
+):
+    """Prend en paramètre un DataFrame brut du classement FIFA,
+
+    calcule les fins de saisons (septembre à août) entre l'année de début et l'année de fin spécifiées,
+    et retourne le Top X mondial de fin de saison.
+    """
+    # Copie locale pour éviter de modifier le DataFrame d'origine
+    df = df_fifa.copy()
+
+    # Conversion de la date
+    df["rank_date"] = pd.to_datetime(df["rank_date"])
+
+    # FILTRE DYNAMIQUE DE L'ANNÉE DE DÉBUT (1er septembre de l'année choisie)
+    date_debut_limite = f"{annee_debut}-09-01"
+    df = df[df["rank_date"] >= date_debut_limite].copy()
+
+    # FILTRE DYNAMIQUE DE L'ANNÉE DE FIN (Si spécifiée, on s'arrête au 31 août de l'année de fin)
+    if annee_fin is not None:
+        date_fin_limite = f"{int(annee_fin) + 1}-08-31"
+        df = df[df["rank_date"] <= date_fin_limite].copy()
+
+    # Fonction interne pour attribuer la bonne saison
+    def determiner_saison(date):
+        if date.month >= 9:
+            return f"{date.year}-{date.year + 1}"
+        else:
+            return f"{date.year - 1}-{date.year}"
+
+    # Application des calculs de saisons
+    df["saison"] = df["rank_date"].apply(determiner_saison)
+    df["season_year"] = df["rank_date"].apply(
+        lambda d: d.year if d.month >= 9 else d.year - 1
+    )
+
+    # Tri par date pour mettre la plus récente d'une saison à la fin
+    df = df.sort_values(by="rank_date")
+
+    # On regroupe par Saison et par Pays, et on garde la DERNIÈRE ligne disponible
+    df_fin_saison = df.drop_duplicates(
+        subset=["saison", "country_full"], keep="last"
+    ).copy()
+
+    # Tri final pour une lecture propre
+    df_fin_saison = df_fin_saison.sort_values(by=["season_year", "rank"])
+
+    # Filtre dynamique du nombre d'équipes
+    df_fin_saison = df_fin_saison[df_fin_saison["rank"] <= nombre_equipes]
+
+    df_fin_saison.to_csv(r'..\data\classement_fifa\fifa_ranking_fin_saison.csv', index=False, sep=',', encoding='utf-8-sig')
+
+    return df_fin_saison
+
+    
