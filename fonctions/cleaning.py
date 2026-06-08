@@ -576,3 +576,92 @@ def encoder_dataset_football(
 
     print(f"Format final après encodage : {df_encoded.shape}\n")
     return df_encoded
+
+
+
+def detecter_tous_outliers_iqr_trie_filtre(df):
+    """Détecte automatiquement les outliers sur toutes les variables numériques
+
+    continues (hors binaires), trie les résultats et n'affiche QUE les
+    variables ayant strictement plus de 10% d'outliers.
+    """
+    # Sélection automatique des colonnes numériques continues
+    toutes_cols_numeriques = df.select_dtypes(include=[np.number]).columns
+    colonnes_numeriques = [
+        col
+        for col in toutes_cols_numeriques
+        if df[col].nunique() > 2 and not col.startswith("injury")
+    ]
+
+    rapport_outliers = {}
+    index_tous_outliers = set()
+    liste_pour_tri = []
+
+    print(
+        f"Analyse en cours sur {len(colonnes_numeriques)} variables numériques continues..."
+    )
+    print(
+        f"({len(toutes_cols_numeriques) - len(colonnes_numeriques)} variables binaires exclues)\n"
+    )
+
+    # Calcul des outliers
+    for col in colonnes_numeriques:
+        Q1 = df[col].quantile(0.25)
+        Q3 = df[col].quantile(0.75)
+        IQR = Q3 - Q1
+
+        borne_inf = Q1 - 1.5 * IQR
+        borne_sup = Q3 + 1.5 * IQR
+
+        outliers_indices = df[
+            (df[col] < borne_inf) | (df[col] > borne_sup)
+        ].index.tolist()
+
+        nb_outliers = len(outliers_indices)
+
+        if nb_outliers > 0:
+            pourcentage = round((nb_outliers / len(df)) * 100, 2)
+
+            rapport_outliers[col] = {
+                "nombre_outliers": nb_outliers,
+                "pourcentage": pourcentage,
+                "indices": outliers_indices,
+            }
+
+            index_tous_outliers.update(outliers_indices)
+
+            liste_pour_tri.append(
+                {"colonne": col, "pourcentage": pourcentage, "nombre": nb_outliers}
+            )
+        else:
+            liste_pour_tri.append(
+                {"colonne": col, "pourcentage": 0.0, "nombre": 0}
+            )
+
+    # Tri par pourcentage décroissant
+    liste_pour_tri = sorted(
+        liste_pour_tri, key=lambda x: x["pourcentage"], reverse=True
+    )
+
+    # Affichage filtré (Uniquement > 5%)
+    print("Variables contenant strictement plus de 5% d'outliers :")
+
+    nb_colonnes_masquees = 0
+
+    for item in liste_pour_tri:
+        if item["pourcentage"] > 5.0:
+            print(
+                f"Colonne '{item['colonne']}' : {item['nombre']} outliers détectés ({item['pourcentage']}% du dataset)"
+            )
+        else:
+            nb_colonnes_masquees += 1
+
+
+    print(
+        f"{nb_colonnes_masquees} autres colonnes numériques ont un taux d'outliers inférieur ou égal à 5% (masquées)."
+    )
+    print(
+        f"\nBilan global (hors binaires) : {len(index_tous_outliers)} lignes uniques possèdent au moins un vrai outlier."
+    )
+
+    return rapport_outliers, list(index_tous_outliers)
