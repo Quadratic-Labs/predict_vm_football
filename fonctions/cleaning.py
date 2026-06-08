@@ -459,33 +459,80 @@ from sklearn.preprocessing import MultiLabelBinarizer
 
 
 def encoder_dataset_football(
-    df, colonnes_categoriques, nations_param=10
+    df, colonnes_categoriques, df_fifa_historique=None
 ):
-    """Fonction modulaire pour encoder les variables catégorielles d'un dataset.
+    """Fonction modulaire mise à jour. Remplace la colonne 'nation' par 10
 
-    S'occupe automatiquement des cas complexes (pos, nation) et des variables
-    classiques (league, foot).
+    colonnes binaires (classement_FIFA_1 à 10) basées sur le rang réel de la
+    nation du joueur pour la saison donnée.
 
     Paramètres:
     -----------
     df : DataFrame
-        Le dataset à encoder.
+        Le dataset principal (1 ligne = 1 joueur pour 1 saison).
+        Doit contenir les colonnes 'nation' et 'season_year'.
     colonnes_categoriques : list of str
-        La liste des colonnes à traiter (ex: ['pos', 'nation', 'league',
-        'foot']).
-    nations_param : int ou list, default 10
-        - Si int : Calcule automatiquement le Top N de la colonne 'nation'.
-        - Si list : Utilise la liste de nations fournie.
+        La liste des colonnes à encoder ('pos', 'league', 'foot', etc.).
+    df_fifa_historique : DataFrame
+        Le DataFrame du Top 10 FIFA filtré contenant les colonnes:
+        ['country_abrv', 'rank', 'season_year'].
     """
     df_encoded = df.copy()
     print(f"Format initial avant encodage : {df_encoded.shape}")
 
-    # On fait une copie de la liste pour ne pas modifier la liste d'origine de l'utilisateur
     cols_a_traiter = list(colonnes_categoriques)
 
-    # Traitement de la position
+    # ==============================================================================
+    # 1. ENCODAGE DE LA NATION EN 10 COLONNES BINAIRES DE CLASSEMENT FIFA
+    # ==============================================================================
+    if "nation" in cols_a_traiter:
+        cols_a_traiter.remove("nation")
+
+        if df_fifa_historique is not None and "nation" in df_encoded.columns:
+            print(
+                "🏆 Encodage de 'nation' en 10 colonnes binaires Top FIFA (par saison)..."
+            )
+
+            # Harmonisation des chaînes de caractères pour garantir le match lors du merge
+            df_encoded["nation_join"] = (
+                df_encoded["nation"].astype(str).str.lower().str.strip()
+            )
+
+            df_fifa_temp = df_fifa_historique.copy()
+            df_fifa_temp["nation_join"] = (
+                df_fifa_temp["country_abrv"].astype(str).str.lower().str.strip()
+            )
+
+            # Jointure pour récupérer le rang ('rank') du pays pour la bonne saison
+            df_encoded = pd.merge(
+                df_encoded,
+                df_fifa_temp[["nation_join", "season_year", "rank"]],
+                on=["nation_join", "season_year"],
+                how="left",
+            )
+
+            # Remplissage des NaN : si un pays n'est pas dans le top 10 historique,
+            # on lui attribue une valeur neutre hors du top 10 (ex: 999)
+            df_encoded["rank"] = df_encoded["rank"].fillna(999).astype(int)
+
+            # Création dynamique des 10 colonnes binaires (0 ou 1)
+            for i in range(1, 11):
+                df_encoded[f"classement_FIFA_{i}"] = (
+                    df_encoded["rank"] == i
+                ).astype(int)
+
+            # Suppression des colonnes devenues inutiles (ancienne nation, rang brut et clé de jointure)
+            df_encoded = df_encoded.drop(columns=["rank", "nation_join"])
+            print("   • Les 10 colonnes classement_FIFA_X ont été injectées.")
+        else:
+            print(
+                "⚠️ Impossible d'appliquer le filtre FIFA (df_fifa_historique manquant ou colonne 'nation' absente)."
+            )
+
+    # ==============================================================================
+    # 2. TRAITEMENT DE LA POSITION (MULTI-LABEL)
+    # ==============================================================================
     if "pos" in cols_a_traiter:
-        # On la retire de la liste générale pour éviter qu'elle passe dans get_dummies
         cols_a_traiter.remove("pos")
 
         if "pos" in df_encoded.columns:
@@ -496,7 +543,7 @@ def encoder_dataset_football(
                 print("Profil Gardien détecté : Suppression de la colonne 'pos'.")
             else:
                 print(
-                    f"Profil Joueurs de champ détecté : Encodage Multi-Label de 'pos' ({nb_modalites_pos} modalités)."
+                    f"Profil Joueurs de champ détecté : Encodage Multi-Label de 'pos'."
                 )
                 listes_postes = (
                     df_encoded["pos"]
@@ -517,37 +564,9 @@ def encoder_dataset_football(
                 df_encoded = pd.concat([df_encoded, df_postes_encodes], axis=1)
                 df_encoded = df_encoded.drop(columns=["pos"])
 
-    # Traitement de la nation
-    if "nation" in cols_a_traiter:
-        # On la retire de la liste générale, et on la remplacera par 'nation_group'
-        cols_a_traiter.remove("nation")
-
-        if "nation" in df_encoded.columns:
-            if isinstance(nations_param, list):
-                nations_valides = nations_param
-                methode_str = f"Liste perso ({len(nations_valides)} nations)"
-            else:
-                nations_valides = (
-                    df_encoded["nation"]
-                    .value_counts()
-                    .head(nations_param)
-                    .index
-                )
-                methode_str = f"Top {nations_param} automatique"
-
-            df_encoded["nation_group"] = df_encoded["nation"].apply(
-                lambda x: x if x in nations_valides else "Autre"
-            )
-            df_encoded = df_encoded.drop(columns=["nation"])
-            print(
-                f"Colonne 'nation' regroupée via [{methode_str}] -> 'nation_group'."
-            )
-
-            # On ajoute 'nation_group' aux variables à encoder en One-Hot à la fin
-            cols_a_traiter.append("nation_group")
-
-    # Traitement des autres variables
-    # Sécurité : On ne garde que les colonnes qui existent réellement dans le DataFrame
+    # ==============================================================================
+    # 3. ENCODAGE ONE-HOT CLASSIQUE (League, Foot, etc.)
+    # ==============================================================================
     variables_finales_a_encoder = [
         col for col in cols_a_traiter if col in df_encoded.columns
     ]
@@ -562,5 +581,4 @@ def encoder_dataset_football(
         )
 
     print(f"Format final après encodage : {df_encoded.shape}\n")
-
     return df_encoded
