@@ -4,6 +4,66 @@ from sklearn.preprocessing import MultiLabelBinarizer
 
 
 
+def nettoyer_age_et_dates(df, colonnes_dates=None):
+    """Nettoie la colonne 'age' (extraction et conversion en int) et applique le
+
+    format datetime normalisé (sans les heures visibles) aux colonnes de dates.
+
+    Paramètres:
+    -----------
+    df : DataFrame
+        Le dataset de football à nettoyer.
+    colonnes_dates : list of str, optional
+        La liste explicite des colonnes de dates à traiter (ex: ['date_of_birth',
+        'date']).
+        Si None, la fonction cherchera automatiquement les colonnes contenant
+        'date' ou 'dob' dans leur nom.
+    """
+    # Copie de sécurité pour éviter le SettingWithCopyWarning
+    df_clean = df.copy()
+
+    # Nettoyage de l'âge
+    if "age" in df_clean.columns:
+        print("Nettoyage de la colonne 'age'...")
+        # Force en texte, extrait les chiffres avant le tiret (ex: 23-328 -> 23)
+        df_clean["age"] = df_clean["age"].astype(str).str.extract(r"^(\d+)")
+
+        # Sécurité pour les NaN : remplacement temporaire par une valeur neutre avant conversion
+        df_clean["age"] = df_clean["age"].fillna(0)
+
+        # Conversion finale en entier (int)
+        df_clean["age"] = df_clean["age"].astype(int)
+        print("Colonne 'age' convertie en entiers avec succès.")
+    else:
+        print("Colonne 'age' introuvable dans le DataFrame.")
+
+    # Nettoyage des colonnes de dates
+    # Si l'utilisateur n'a pas fourni de liste, on détecte automatiquement les colonnes de date
+    if colonnes_dates is None:
+        colonnes_dates = [
+            col
+            for col in df_clean.columns
+            if "date" in col.lower() or "dob" in col.lower()
+        ]
+
+    if colonnes_dates:
+        print(f"Traitement des colonnes de dates : {colonnes_dates}...")
+        for col in colonnes_dates:
+            if col in df_clean.columns:
+                # Conversion au format datetime Pandas officiel
+                df_clean[col] = pd.to_datetime(df_clean[col], errors="coerce")
+
+                # Ecrase l'heure en la figeant strictement à minuit (00:00:00)
+                # Tout en conservant le format datetime64[ns] idéal pour les calculs.
+                df_clean[col] = df_clean[col].dt.normalize()
+        print("   • Toutes les heures ont été retirées (remises à minuit).")
+    else:
+        print("Aucune colonne de date détectée ou fournie.")
+
+    print("Nettoyage de l'âge et des dates terminé.\n")
+    return df_clean
+
+
 def verifier_doublons_metier_et_techniques(dataframe):
     """Analyse et distingue les doublons de mercato des doublons techniques
 
@@ -394,90 +454,109 @@ def lister_variables_categorielles(df):
 
 
 
-def encoder_dataset_football(df, top_n_nations=10):
-    """Fonction unique pour encoder les variables catégorielles (league, nation, pos)
+import pandas as pd
+from sklearn.preprocessing import MultiLabelBinarizer
 
-    s'adaptant automatiquement aux Gardiens ou aux Joueurs de champ.
+
+def encoder_dataset_football(
+    df, colonnes_categoriques, nations_param=10
+):
+    """Fonction modulaire pour encoder les variables catégorielles d'un dataset.
+
+    S'occupe automatiquement des cas complexes (pos, nation) et des variables
+    classiques (league, foot).
+
+    Paramètres:
+    -----------
+    df : DataFrame
+        Le dataset à encoder.
+    colonnes_categoriques : list of str
+        La liste des colonnes à traiter (ex: ['pos', 'nation', 'league',
+        'foot']).
+    nations_param : int ou list, default 10
+        - Si int : Calcule automatiquement le Top N de la colonne 'nation'.
+        - Si list : Utilise la liste de nations fournie.
     """
-    # Copie de sécurité pour éviter les avertissements de type SettingWithCopyWarning
     df_encoded = df.copy()
-
     print(f"Format initial avant encodage : {df_encoded.shape}")
 
-    # Traitement de la colonne position
-    if "pos" in df_encoded.columns:
-        nb_modalites_pos = df_encoded["pos"].nunique()
+    # On fait une copie de la liste pour ne pas modifier la liste d'origine de l'utilisateur
+    cols_a_traiter = list(colonnes_categoriques)
 
-        # Cas 1 : Base de Gardiens (Une seule modalité, ex: 'GK')
-        if nb_modalites_pos <= 1:
-            df_encoded = df_encoded.drop(columns=["pos"])
-            print("Profil Gardien détecté : Suppression de la colonne 'pos'.")
+    # Traitement de la position
+    if "pos" in cols_a_traiter:
+        # On la retire de la liste générale pour éviter qu'elle passe dans get_dummies
+        cols_a_traiter.remove("pos")
 
-        # Cas 2 : Base de Joueurs de champ (Multi-labels / Plusieurs postes)
-        else:
+        if "pos" in df_encoded.columns:
+            nb_modalites_pos = df_encoded["pos"].nunique()
+
+            if nb_modalites_pos <= 1:
+                df_encoded = df_encoded.drop(columns=["pos"])
+                print("Profil Gardien détecté : Suppression de la colonne 'pos'.")
+            else:
+                print(
+                    f"Profil Joueurs de champ détecté : Encodage Multi-Label de 'pos' ({nb_modalites_pos} modalités)."
+                )
+                listes_postes = (
+                    df_encoded["pos"]
+                    .astype(str)
+                    .str.split(",")
+                    .apply(lambda x: [i.strip() for i in x])
+                )
+
+                mlb = MultiLabelBinarizer()
+                matrice_postes = mlb.fit_transform(listes_postes)
+
+                df_postes_encodes = pd.DataFrame(
+                    matrice_postes,
+                    columns=[f"pos_{classe}" for classe in mlb.classes_],
+                    index=df_encoded.index,
+                )
+
+                df_encoded = pd.concat([df_encoded, df_postes_encodes], axis=1)
+                df_encoded = df_encoded.drop(columns=["pos"])
+
+    # Traitement de la nation
+    if "nation" in cols_a_traiter:
+        # On la retire de la liste générale, et on la remplacera par 'nation_group'
+        cols_a_traiter.remove("nation")
+
+        if "nation" in df_encoded.columns:
+            if isinstance(nations_param, list):
+                nations_valides = nations_param
+                methode_str = f"Liste perso ({len(nations_valides)} nations)"
+            else:
+                nations_valides = (
+                    df_encoded["nation"]
+                    .value_counts()
+                    .head(nations_param)
+                    .index
+                )
+                methode_str = f"Top {nations_param} automatique"
+
+            df_encoded["nation_group"] = df_encoded["nation"].apply(
+                lambda x: x if x in nations_valides else "Autre"
+            )
+            df_encoded = df_encoded.drop(columns=["nation"])
             print(
-                f"Profil Joueurs de champ détecté : Encodage Multi-Label des {nb_modalites_pos} modalités de postes."
+                f"Colonne 'nation' regroupée via [{methode_str}] -> 'nation_group'."
             )
 
-            # On transforme la chaîne "DF,FW" en une vraie liste Python ['DF', 'FW']
-            listes_postes = (
-                df_encoded["pos"]
-                .astype(str)
-                .str.split(",")
-                .apply(lambda x: [i.strip() for i in x])
-            )
+            # On ajoute 'nation_group' aux variables à encoder en One-Hot à la fin
+            cols_a_traiter.append("nation_group")
 
-            # On crée la matrice binaire de 0 et de 1
-            mlb = MultiLabelBinarizer()
-            matrice_postes = mlb.fit_transform(listes_postes)
+    # Traitement des autres variables
+    # Sécurité : On ne garde que les colonnes qui existent réellement dans le DataFrame
+    variables_finales_a_encoder = [
+        col for col in cols_a_traiter if col in df_encoded.columns
+    ]
 
-            # Conversion en DataFrame propre aligné sur les index d'origine
-            df_postes_encodes = pd.DataFrame(
-                matrice_postes,
-                columns=[f"pos_{classe}" for classe in mlb.classes_],
-                index=df_encoded.index,
-            )
-
-            # Fusion et suppression de l'ancienne colonne texte
-            df_encoded = pd.concat([df_encoded, df_postes_encodes], axis=1)
-            df_encoded = df_encoded.drop(columns=["pos"])
-
-            print(
-                f"   • Encodage des postes terminé. Classes détectées : {list(mlb.classes_)}"
-            )
-    else:
-        print(
-            "Colonne 'pos' absente (Traitement déjà effectué ou base de gardiens pré-nettoyée)."
-        )
-
-    # Regroupement des nationalités
-    if "nation" in df_encoded.columns:
-        # On calcule les N nations les plus représentées spécifiques à CE dataset
-        top_nations = df_encoded["nation"].value_counts().head(top_n_nations).index
-
-        # Application du filtre
-        df_encoded["nation_group"] = df_encoded["nation"].apply(
-            lambda x: x if x in top_nations else "Autre"
-        )
-
-        # Suppression de l'ancienne colonne de texte brute
-        df_encoded = df_encoded.drop(columns=["nation"])
-        print(
-            f"Colonne 'nation' regroupée : Top {top_n_nations} + 'Autre' ({df_encoded['nation_group'].nunique()} modalités au total)."
-        )
-
-    # Encodage des ligues et des nationalités
-    variables_a_encoder = []
-    if "league" in df_encoded.columns:
-        variables_a_encoder.append("league")
-    if "nation_group" in df_encoded.columns:
-        variables_a_encoder.append("nation_group")
-
-    if variables_a_encoder:
-        # Encodage en gardant toutes les colonnes (drop_first=False)
+    if variables_finales_a_encoder:
+        print(f"Encodage One-Hot des colonnes : {variables_finales_a_encoder}")
         df_encoded = pd.get_dummies(
             df_encoded,
-            columns=variables_a_encoder,
+            columns=variables_finales_a_encoder,
             drop_first=False,
             dtype=int,
         )
