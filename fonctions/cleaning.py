@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MultiLabelBinarizer
-
+from datetime import datetime
+from sklearn.preprocessing import MinMaxScaler
 
 
 def nettoyer_age_et_dates(df, colonnes_dates=None):
@@ -11,7 +12,7 @@ def nettoyer_age_et_dates(df, colonnes_dates=None):
 
     Paramètres:
     -----------
-    df : DataFrame
+    df : dataframe
         Le dataset de football à nettoyer.
     colonnes_dates : list of str, optional
         La liste explicite des colonnes de dates à traiter (ex: ['date_of_birth',
@@ -24,7 +25,7 @@ def nettoyer_age_et_dates(df, colonnes_dates=None):
 
     # Nettoyage de l'âge
     if "age" in df_clean.columns:
-        print("Nettoyage de la colonne 'age'...")
+        print("Nettoyage de la colonne 'age'")
         # Force en texte, extrait les chiffres avant le tiret (ex: 23-328 -> 23)
         df_clean["age"] = df_clean["age"].astype(str).str.extract(r"^(\d+)")
 
@@ -35,7 +36,7 @@ def nettoyer_age_et_dates(df, colonnes_dates=None):
         df_clean["age"] = df_clean["age"].astype(int)
         print("Colonne 'age' convertie en entiers avec succès.")
     else:
-        print("Colonne 'age' introuvable dans le DataFrame.")
+        print("Colonne 'age' introuvable dans le dataframe.")
 
     # Nettoyage des colonnes de dates
     # Si l'utilisateur n'a pas fourni de liste, on détecte automatiquement les colonnes de date
@@ -47,7 +48,7 @@ def nettoyer_age_et_dates(df, colonnes_dates=None):
         ]
 
     if colonnes_dates:
-        print(f"Traitement des colonnes de dates : {colonnes_dates}...")
+        print(f"Traitement des colonnes de dates : {colonnes_dates}")
         for col in colonnes_dates:
             if col in df_clean.columns:
                 # Conversion au format datetime Pandas officiel
@@ -56,7 +57,7 @@ def nettoyer_age_et_dates(df, colonnes_dates=None):
                 # Ecrase l'heure en la figeant strictement à minuit (00:00:00)
                 # Tout en conservant le format datetime64[ns] idéal pour les calculs.
                 df_clean[col] = df_clean[col].dt.normalize()
-        print("   • Toutes les heures ont été retirées (remises à minuit).")
+        print("Toutes les heures ont été retirées (remises à minuit).")
     else:
         print("Aucune colonne de date détectée ou fournie.")
 
@@ -100,12 +101,12 @@ def verifier_doublons_metier_et_techniques(dataframe):
     # Présence de doublons techniques
     if nb_doublons_techniques > 0:
         print(
-            f" ATTENTION : {nb_doublons_techniques} lignes sont des doublons techniques stricts."
+            f" Attention : {nb_doublons_techniques} lignes sont des doublons techniques stricts."
         )
         print(
-            "   (Même joueur, même saison, même club -> Erreur d'extraction/jointure)"
+            "(Même joueur, même saison, même club -> Erreur d'extraction/jointure)"
         )
-        print("\n   Exemple de lignes techniques concernées :")
+        print("\nExemple de lignes techniques concernées :")
         lignes_doublons_tech = dataframe[
             dataframe.duplicated(
                 subset=[col_joueur, col_saison, col_club], keep=False
@@ -119,15 +120,17 @@ def verifier_doublons_metier_et_techniques(dataframe):
             " Parfait ! Aucune répétition technique (Même joueur, même saison, même club)."
         )
 
+    print()
+
     # Présence de doublons de Mercato
     if nb_doublons_mercato > 0:
         print(
-            f"={nb_doublons_mercato} lignes correspondent à des doublons de mercato"
+            f"{nb_doublons_mercato} lignes correspondent à des doublons de mercato"
         )
         print(
-            "   (Même joueur, même saison, mais CLUBS DIFFÉRENTS -> Transferts de mi-saison)"
+            "(Même joueur, même saison, mais clubs différents -> Transferts de mi-saison)"
         )
-        print("\n   Exemple de joueurs transférés concernés :")
+        print("\nExemple de joueurs transférés concernés :")
 
         # Pour n'isoler que le mercato, on filtre les doublons joueur+saison qui n'ont pas le même club
         lignes_tous_doublons = dataframe[
@@ -142,16 +145,11 @@ def verifier_doublons_metier_et_techniques(dataframe):
             "Aucun doublon de mercato détecté (Chaque joueur n'a qu'un seul club par saison)."
         )
 
-
     # Retourne les résultats sous forme de dictionnaire (optionnel)
     return {
         "doublons_techniques": nb_doublons_techniques,
         "doublons_mercato": nb_doublons_mercato,
     }
-
-
-
-
 
 
 def fusionner_doublons_techniques(df, chemin_sauvegarde=None):
@@ -169,7 +167,7 @@ def fusionner_doublons_techniques(df, chemin_sauvegarde=None):
 
     # Utilisation de groupby + first()
     # .first() dans un groupby Pandas prend automatiquement la première valeur NON-NAN
-    # trouvée pour CHAQUE colonne de manière indépendante.
+    # trouvée pour chaque colonne de manière indépendante.
     df_fusionne = df_tri.groupby(
         ["player", "season", "team"], as_index=False
     ).first()
@@ -178,59 +176,11 @@ def fusionner_doublons_techniques(df, chemin_sauvegarde=None):
         f"Format après fusion intelligente des doublons : {df_fusionne.shape}"
     )
 
-    # Sauvegarde optionnelle
     if chemin_sauvegarde:
         df_fusionne.to_csv(chemin_sauvegarde, index=False)
         print(f"Base fusionnée sauvegardée dans : {chemin_sauvegarde}")
 
     return df_fusionne
-
-
-
-
-def verifier_doublons_mercato(df):
-    """Diagnostique et affiche les doublons de type Joueur + Saison
-
-    généralement causés par les transferts ou prêts de mi-saison (mercato).
-    """
-    print("Diagnostic des doublons liés au mercato (transferts de mi-saison)")
-
-    # Identification automatique des colonnes clés
-    col_joueur = "player" if "player" in df.columns else None
-    col_saison = "season" if "season" in df.columns else None
-    col_club = "team" if "team" in df.columns else None
-
-    if col_joueur and col_saison:
-        # Calcul du nombre de lignes en doublon sur le couple Joueur + Saison
-        nb_doublons = df.duplicated(subset=[col_joueur, col_saison]).sum()
-
-        if nb_doublons > 0:
-            print(
-                f"Attention : {nb_doublons} lignes sont des doublons pour le même joueur lors de la même saison !"
-            )
-            print("   Cela indique la présence de transferts ou de prêts à la mi-saison.\n")
-            print("   Exemple de lignes concernées :")
-
-            # On prépare les colonnes à afficher pour l'exemple (on ajoute le club si dispo pour plus de clarté)
-            cols_affichage = [col_joueur, col_saison]
-            if col_club:
-                cols_affichage.append(col_club)
-
-            # Extraction et affichage des premiers exemples trouvés
-            exemples = df[df.duplicated(subset=[col_joueur, col_saison], keep=False)]
-            print(exemples[cols_affichage].head(6))
-
-        else:
-            print(
-                "Parfait ! Aucun doublon détecté pour le couple [Joueur + Saison]."
-            )
-            print("   Chaque joueur ne possède qu'une seule et unique ligne par saison.")
-
-    else:
-        print(
-            "Impossible de vérifier : les colonnes 'player' ou 'season' sont manquantes dans le dataset."
-        )
-
 
 
 
@@ -268,11 +218,11 @@ def fusionner_et_recalculer_mercato(df):
 
         col_lower = col.lower().strip()
 
-        # Priorité 1 : Les exceptions techniques à ne pas modifier (Dernier en date)
+        # Les exceptions techniques à ne pas modifier (dernier en date)
         if any(keyword in col_lower for keyword in mots_cles_exceptions):
             aggregation_rules[col] = "last"
 
-        # Priorité 2 : Les colonnes de pourcentage (%) ou ratios intermédiaires (Moyenne)
+        # Les colonnes de pourcentage (%) ou ratios intermédiaires (moyenne)
         elif (
             "pct" in col_lower
             or "%" in col
@@ -287,11 +237,11 @@ def fusionner_et_recalculer_mercato(df):
         ):
             aggregation_rules[col] = "mean"
 
-        # Priorité 3 : Les autres colonnes numériques (Buts, Minutes, Passes...) (Somme)
+        # Les autres colonnes numériques (Buts, Minutes, Passes...) (somme)
         elif col in cols_numeriques:
             aggregation_rules[col] = "sum"
 
-        # Priorité 4 : Les colonnes textuelles (team, league...) (Dernier club en date)
+        # Les colonnes textuelles (team, league...) (dernier club en date)
         else:
             aggregation_rules[col] = "last"
 
@@ -386,7 +336,6 @@ def fusionner_et_recalculer_mercato(df):
     return df_fusion_mercato
 
 
-
 def diagnostiquer_valeurs_manquantes(df, seuil=0.30):
     """Analyse, affiche et retourne les colonnes dont le taux de valeurs manquantes
 
@@ -419,17 +368,63 @@ def diagnostiquer_valeurs_manquantes(df, seuil=0.30):
         liste_colonnes_vides = []
 
 
-    # Retourne la liste des colonnes (utile pour l'étape de suppression)
-    return liste_colonnes_vides
+def nettoyer_valeurs_manquantes_ciblees(df):
+    """Effectue le traitement ciblé des NaN :
 
+    1. Remplace par 0 les variables de performance spécifiques.
+    2. Propage (ffill/bfill) les données fixes des joueurs d'une saison à l'autre.
+    3. Remplace les NaN résiduels par des valeurs neutres ('Inconnu' ou 0).
+    """
+    print("Début du traitement ciblé des valeurs manquantes...")
+    
+    # Copie locale pour éviter les warnings "SettingWithCopy"
+    df_clean = df.copy()
 
+    # Remplacement des NA par des 0 dans les colonnes de performance spécifiques
+    cols_NA = [
+        "Penalty Kicks_Save%", "Performance_CS%", "Performance_Save%",
+        "Standard_G/SoT", "Standard_G/Sh", "Standard_SoT%", "Per 90 Minutes_Gls",
+        "Per 90 Minutes_Ast", "Per 90 Minutes_G+A", "Standard_SoT/90", "Standard_Sh/90"
+    ]
+    # On ne filtre que les colonnes réellement présentes pour éviter les plantages
+    cols_NA_presentes = [c for c in cols_NA if c in df_clean.columns]
+    
+    if cols_NA_presentes:
+        df_clean[cols_NA_presentes] = df_clean[cols_NA_presentes].fillna(0)
+    print(f" -> {len(cols_NA_presentes)} colonnes de performance nettoyées (NaN -> 0).")
 
+    # Propagation inter-saisons des données fixes des joueurs
+    cols_a_propager = [
+        "foot", "tm_dob_key", "date_of_birth", "sub_position", 
+        "player_id", "tm_join_key_full", "tm_join_key", "name", "position"
+    ]
+    cols_propager_presentes = [c for c in cols_a_propager if c in df_clean.columns]
+
+    if cols_propager_presentes and "player" in df_clean.columns:
+        # Optimisation : on groupe et on applique ffill puis bfill d'un coup sur le bloc de colonnes
+        df_clean[cols_propager_presentes] = (
+            df_clean.groupby("player")[cols_propager_presentes]
+            .ffill()
+            .bfill()
+        )
+        print(f" -> Propagation inter-saisons terminée pour {len(cols_propager_presentes)} colonnes fixes.")
+
+    # Traitement des NA résiduels
+    for col in cols_propager_presentes:
+        if col == "player_id":
+            df_clean[col] = df_clean[col].fillna(0)
+        else:
+            df_clean[col] = df_clean[col].fillna("Inconnu")
+            
+    print("Finitions terminées (Derniers NaN résiduels convertis en valeurs neutres).")
+    
+    return df_clean
 
 
 def lister_variables_categorielles(df):
     """Identifie, affiche le nombre de modalités uniques et retourne
 
-    la liste des variables catégorielles présentes dans le DataFrame.
+    la liste des variables catégorielles présentes dans le dataframe.
     """
     print("Variables catégorielles du dataset :")
 
@@ -463,13 +458,13 @@ def encoder_dataset_football(
 
     Paramètres:
     -----------
-    df : DataFrame
+    df : dataframe
         Le dataset principal (1 ligne = 1 joueur pour 1 saison).
         Doit contenir les colonnes 'nation' et 'season_year'.
     colonnes_categoriques : list of str
         La liste des colonnes à encoder ('pos', 'league', 'foot', etc.).
-    df_fifa_historique : DataFrame
-        Le DataFrame du Top 10 FIFA filtré contenant les colonnes:
+    df_fifa_historique : dataframe
+        Le dataframe du Top 10 FIFA filtré contenant les colonnes:
         ['country_abrv', 'rank', 'season_year'].
     """
     df_encoded = df.copy()
@@ -660,3 +655,223 @@ def detecter_tous_outliers_iqr_trie_filtre(df):
     )
 
     return rapport_outliers, list(index_tous_outliers)
+
+
+def imputer_donnees_physiques_et_ages(df):
+    """Nettoie la taille des joueurs en imputant les valeurs aberrantes
+
+    par la médiane de leur poste, puis calcule l'année de naissance et l'âge.
+    """
+    print("Début du traitement de la taille et du calcul des âges...")
+
+    # Copie locale pour éviter les warnings "SettingWithCopy"
+    df_clean = df.copy()
+
+    # Nettoyage et imputation de la taille
+    if "height_in_cm" in df_clean.columns:
+        # Remplacement des valeurs aberrantes par NaN
+        df_clean.loc[
+            (df_clean["height_in_cm"] < 150)
+            | (df_clean["height_in_cm"] > 220),
+            "height_in_cm",
+        ] = np.nan
+
+        # Imputation par la médiane du poste (version optimisée sans lambda)
+        if "position" in df_clean.columns:
+            df_clean["height_in_cm"] = df_clean["height_in_cm"].fillna(
+                df_clean.groupby("position")["height_in_cm"].transform("median")
+            )
+            print(" -> Valeurs aberrantes de taille imputées par la médiane du poste.")
+        else:
+            # Sécurité si la colonne 'position' n'existe pas, on prend la médiane globale
+            df_clean["height_in_cm"] = df_clean["height_in_cm"].fillna(
+                df_clean["height_in_cm"].median()
+            )
+            print(" -> Valeurs aberrantes de taille imputées par la médiane globale (colonne 'position' manquante).")
+
+    # Calcul correct de l'âge
+    if "date_of_birth" in df_clean.columns and "season_year" in df_clean.columns:
+        # Extraction de l'année de naissance
+        df_clean["born"] = pd.to_datetime(
+            df_clean["date_of_birth"], errors="coerce"
+        ).dt.year
+
+        # Calcul de l'âge au moment de la saison
+        df_clean["age"] = df_clean["season_year"] - df_clean["born"]
+        print(" -> Colonnes 'born' (année) et 'age' calculées avec succès.")
+    else:
+        print("Colonne 'date_of_birth' ou 'season_year' manquante. Calcul de l'âge annulé.")
+
+    print("Traitement terminé.")
+
+    return df_clean
+
+
+def calculer_jours_contrat_restants(df):
+    """Calcule le nombre de jours de contrat restants pour chaque joueur
+
+    par rapport à une date de référence fixe de fin de saison.
+    """
+    print("Début du calcul de la durée restante des contrats...")
+
+    # Copie locale pour éviter les warnings
+    df_clean = df.copy()
+
+    # Vérification des colonnes nécessaires
+    if "season" not in df_clean.columns or "contract_expiration_date" not in df_clean.columns:
+        print("Colonne 'season' ou 'contract_expiration_date' manquante. Calcul annulé.")
+        return df_clean
+
+    # Dictionnaire de correspondance Saisons -> Dates de fin de saison
+    saison_to_date = {
+        2021: "2021-06-30",
+        2122: "2022-06-30",
+        2223: "2023-06-30",
+        2324: "2024-06-30",
+        2425: "2025-06-30",
+        2526: "2026-06-30",
+    }
+
+    # Création et conversion des dates de référence
+    df_clean["date_ref_saison"] = df_clean["season"].map(saison_to_date)
+    df_clean["date_ref_saison"] = pd.to_datetime(df_clean["date_ref_saison"])
+    df_clean["contract_expiration_date"] = pd.to_datetime(
+        df_clean["contract_expiration_date"], errors="coerce"
+    )
+
+    # Calcul du delta en jours
+    df_clean["contrat_jours_restants"] = (
+        df_clean["contract_expiration_date"] - df_clean["date_ref_saison"]
+    ).dt.days
+
+    # Résultats
+    print(f"Contrats déjà expirés (valeur négative) : {(df_clean['contrat_jours_restants'] < 0).sum()}")
+    print(f"Contrats manquants (NaN)                  : {df_clean['contrat_jours_restants'].isna().sum()}")
+    
+    print()
+    
+    print("Statistiques descriptives de la variable calculée :")
+    print(df_clean["contrat_jours_restants"].describe().to_string())
+
+    # Nettoyage de la colonne temporaire
+    df_clean.drop(columns=["date_ref_saison"], inplace=True)
+
+    print("Calcul terminé avec succès.")
+
+    return df_clean
+
+
+def supprimer_colonnes_inutiles_et_leakage(df):
+    """Supprime les identifiants techniques, les doublons d'information
+
+    et les variables de fuite de données (Data Leakage) avant la modélisation.
+    """
+    print("Début du nettoyage des colonnes avant modélisation...")
+
+    # Copie locale pour éviter les warnings
+    df_clean = df.copy()
+
+    # Dictionnaire explicatif des suppressions
+    categories_suppression = {
+        "Identifiants techniques": [
+            "join_key", "tm_join_key", "tm_join_key_full", "tm_id",
+            "player_id", "dob_key", "tm_dob_key", "match_method"
+        ],
+        "Doublons d'information": [
+            "name", "date_of_birth", "dob_year", "date", "season"
+        ],
+        "Fuites de données (Data Leakage)": [
+            "valuation_season_year", "contract_expiration_date"
+        ],
+    }
+
+    total_supprimees = 0
+
+    # Analyse et suppression par catégorie pour un affichage propre
+    for categorie, colonnes in categories_suppression.items():
+        # On ne garde que les colonnes qui existent réellement dans le DataFrame
+        cols_presentes = [c for c in colonnes if c in df_clean.columns]
+        
+        if cols_presentes:
+            df_clean.drop(columns=cols_presentes, inplace=True)
+            print(f"{categorie:35s} : {len(cols_presentes):2d} colonnes supprimées ({', '.join(cols_presentes)})")
+            total_supprimees += len(cols_presentes)
+        else:
+            print(f"{categorie:35s} : 0 colonne supprimée")
+
+    print()
+    print(f"Nettoyage terminé. Total de colonnes supprimées : {total_supprimees}")
+    print(f"Dimensions actuelles du DataFrame : {df_clean.shape}")
+
+    return df_clean
+
+
+def normaliser_variables_continues(df):
+    """Identifie les variables continues (non binaires, non encodées) et crée
+
+    leurs versions normalisées (MinMax 0-1) avec le suffixe '_nor'.
+    """
+    print("Début du processus de normalisation (MinMax)...")
+
+    # Copie locale pour éviter les warnings
+    df_clean = df.copy()
+
+    # Identification des colonnes à exclure de la normalisation
+    cols_exclure_normalisation = [
+        *[c for c in df_clean.columns if c.startswith("pos_")],
+        *[c for c in df_clean.columns if c.startswith("sub_position_")],
+        *[c for c in df_clean.columns if c.startswith("league_")],
+        *[c for c in df_clean.columns if c.startswith("foot_")],
+        *[c for c in df_clean.columns if c.startswith("classement_FIFA_")],
+        *[
+            c
+            for c in df_clean.columns
+            if "injury_musculaire" in c
+            and df_clean[c].dropna().isin([0, 1]).all()
+        ],
+        *[
+            c
+            for c in df_clean.columns
+            if c.startswith("injury_") and df_clean[c].dropna().isin([0, 1]).all()
+        ],
+        "season_year",
+    ]
+
+    # Séparation automatique des colonnes numériques (continues vs binaires)
+    numeric_cols = df_clean.select_dtypes(include="number").columns.tolist()
+    binary_cols = [
+        c for c in numeric_cols if df_clean[c].dropna().isin([0, 1]).all()
+    ]
+
+    # Isolation des colonnes qui doivent être normalisées
+    cols_a_normaliser = [
+        c
+        for c in numeric_cols
+        if c not in cols_exclure_normalisation and c not in binary_cols
+    ]
+
+    print(
+        f"Colonnes binaires (déjà en 0/1, à ne pas normaliser) : {len(binary_cols)}"
+    )
+    print(
+        f"Colonnes continues à dupliquer en version '_nor'     : {len(cols_a_normaliser)}"
+    )
+
+    print()
+
+    # Application du MinMaxScaler (0-1)
+    if cols_a_normaliser:
+        scaler = MinMaxScaler()
+        cols_normalisees_noms = [f"{c}_nor" for c in cols_a_normaliser]
+
+        # Imputation temporaire par la médiane pour le fit_transform (sécurité Sklearn)
+        df_clean[cols_normalisees_noms] = scaler.fit_transform(
+            df_clean[cols_a_normaliser].fillna(df_clean[cols_a_normaliser].median())
+        )
+        print(
+            f"\nCréation des colonnes '_nor' terminée. Total de colonnes actuel : {df_clean.shape[1]}"
+        )
+    else:
+        print("\nAucune colonne continue à normaliser n'a été trouvée.")
+
+    return df_clean
