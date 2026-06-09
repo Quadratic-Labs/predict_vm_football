@@ -1324,24 +1324,32 @@ def analyser_distribution_prix_ligue_poste(df):
 def detecter_top_colinearites(df, top_n=15):
     """Calcule la matrice de corrélation et extrait les paires de variables
 
-    présentant les plus fortes colinéarités (en valeur absolue).
+    présentant les plus fortes colinéarités (en valeur absolue), en excluant
+    toutes les variables normalisées finissant par '_nor'.
     """
-    print(f"Extraction du Top {top_n} des colinéarités les plus fortes...")
+    print(
+        f"Extraction du Top {top_n} des colinéarités (hors variables normalisées)..."
+    )
 
     # Sélection uniquement des variables numériques (continues et binaires)
     df_num = df.select_dtypes(include=[np.number]).copy()
-    
+
+    # Exclusion des variables normalisées
+    cols_sans_nor = [c for c in df_num.columns if not c.endswith("_nor")]
+    df_num = df_num[cols_sans_nor]
+
     # Sécurité : On supprime les colonnes qui n'ont aucune variabilité (écart-type nul)
     df_num = df_num.loc[:, df_num.std() > 0]
 
     # Calcul de la matrice de corrélation
     corr_matrix = df_num.corr(method="pearson")
 
-    # On ne garde que le triangle supérieur de la matrice pour éviter les doublons (A vs B et B vs A)
-    # et on exclut la diagonale (corrélation de 1 d'une variable avec elle-même)
-    upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    # On ne garde que le triangle supérieur de la matrice pour éviter les doublons
+    upper_tri = corr_matrix.where(
+        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+    )
 
-    # On "aplatit" (unstack) la matrice pour passer d'un tableau 2D à une liste de paires
+    # On "aplatit" (unstack) la matrice pour passer à une liste de paires
     corr_pairs = upper_tri.unstack().dropna()
 
     # Création d'un DataFrame propre pour le tri
@@ -1352,11 +1360,15 @@ def detecter_top_colinearites(df, top_n=15):
     df_colin["Abs_Correlation"] = df_colin["Correlation"].abs()
 
     # Tri par corrélation absolue décroissante et sélection du Top N
-    top_colin = df_colin.sort_values(by="Abs_Correlation", ascending=False).head(top_n)
-    
+    top_colin = df_colin.sort_values(by="Abs_Correlation", ascending=False).head(
+        top_n
+    )
+
     # Nettoyage de l'affichage
-    top_colin = top_colin.drop(columns=["Abs_Correlation"]).reset_index(drop=True)
-    
+    top_colin = top_colin.drop(columns=["Abs_Correlation"]).reset_index(
+        drop=True
+    )
+
     # Formatage pour un affichage élégant des coefficients
     top_colin["Correlation"] = top_colin["Correlation"].round(3)
 
