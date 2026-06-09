@@ -453,11 +453,6 @@ def lister_variables_categorielles(df):
 
 
 
-
-import pandas as pd
-from sklearn.preprocessing import MultiLabelBinarizer
-
-
 def encoder_dataset_football(
     df, colonnes_categoriques, df_fifa_historique=None
 ):
@@ -488,7 +483,7 @@ def encoder_dataset_football(
 
         if df_fifa_historique is not None and "nation" in df_encoded.columns:
             print(
-                "🏆 Encodage de 'nation' en 10 colonnes binaires Top FIFA (par saison)..."
+                "Encodage de 'nation' en 10 colonnes binaires Top FIFA (par saison)..."
             )
 
             # Harmonisation des chaînes de caractères pour garantir le match lors du merge
@@ -524,7 +519,7 @@ def encoder_dataset_football(
             print("   • Les 10 colonnes classement_FIFA_X ont été injectées.")
         else:
             print(
-                "⚠️ Impossible d'appliquer le filtre FIFA (df_fifa_historique manquant ou colonne 'nation' absente)."
+                "Impossible d'appliquer le filtre FIFA (df_fifa_historique manquant ou colonne 'nation' absente)."
             )
 
     # Traitement de la position
