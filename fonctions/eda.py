@@ -155,7 +155,7 @@ def analyser_variable_cible(df, target_col="valeur_marchande", dossier_sauvegard
 
     et génère trois graphiques : distribution brute, log-transformée et boxplot.
     """
-    print(f"Analyse de la variable cible : {target_col} ===")
+    print(f"Analyse de la variable cible : {target_col}")
 
     # Extraction et nettoyage des données manquantes
     if target_col not in df.columns:
@@ -685,15 +685,15 @@ def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_
     print("Analyse du profil médian par poste")
 
     # Vérifications initiales et filtres
-    if "pos_simple" not in df.columns:
-        print("Annulé : La colonne 'pos_simple' est absente du DataFrame.")
+    if "position" not in df.columns:
+        print("Annulé : La colonne 'position' est absente du DataFrame.")
         return
 
-    pos_order = ["GK", "DF", "MF", "FW"]
-    df_pos = df[df["pos_simple"].isin(pos_order)].copy()
+    pos_order = ["Goalkeeper", "Defender", "Midfield", "Attack"]
+    df_pos = df[df["position"].isin(pos_order)].copy()
 
     if df_pos.empty:
-        print("Annulé : Aucun joueur ne correspond aux postes (GK, DF, MF, FW) dans la colonne 'pos_simple'.")
+        print("Annulé : Aucun joueur ne correspond aux postes (Goalkeeper, Defender, Midfield, Attack) dans la colonne 'position'.")
         return
 
     # Gestion de la couleur par défaut si COLORS n'est pas passé
@@ -719,7 +719,7 @@ def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_
 
     # Calcul du profil médian et normalisation Min-Max
     profile = (
-        df_pos.groupby("pos_simple")[list(profile_cols.values())]
+        df_pos.groupby("position")[list(profile_cols.values())]
         .median()
         .reindex(pos_order)
     )
@@ -747,7 +747,7 @@ def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_
 
     # Graphique 2 : Valeurs brutes VM (uniquement si la cible est présente)
     if target_col in df.columns:
-        vm_by_pos = df_pos.groupby("pos_simple")[target_col].median().reindex(pos_order) / 1e6
+        vm_by_pos = df_pos.groupby("position")[target_col].median().reindex(pos_order) / 1e6
         vm_by_pos.plot(kind="bar", ax=axes[1], color=couleurs_dict.get("blue", "#61AFEF"), edgecolor="white")
         axes[1].set_title("VM médiane par poste")
         axes[1].set_ylabel("VM (M€)")
@@ -786,8 +786,8 @@ def analyser_correlations_specifiques_poste(df, target_col, dossier_sauvegarde=N
     print("Analyse des corrélations spécifiques par poste")
 
     # Vérifications initiales
-    if "pos_simple" not in df.columns:
-        print("Annulé : La colonne 'pos_simple' est absente du DataFrame.")
+    if "position" not in df.columns:
+        print("Annulé : La colonne 'position' est absente du DataFrame.")
         return
         
     if target_col not in df.columns:
@@ -800,9 +800,9 @@ def analyser_correlations_specifiques_poste(df, target_col, dossier_sauvegarde=N
 
     # Définition des paires à analyser (Poste, Feature, Titre visuel)
     pairs = [
-        ("FW", "xg", "xG → VM  (Attaquants)"),
-        ("MF", "xg", "xG → VM  (Milieux)"),
-        ("MF", "xa", "xA → VM  (Milieux)"),
+        ("Attack", "xg", "xG → VM  (Attaquants)"),
+        ("Midfield", "xg", "xG → VM  (Milieux)"),
+        ("Midfield", "xa", "xA → VM  (Milieux)"),
     ]
 
     # Filtrer les paires pour ne garder que les features existantes
@@ -823,7 +823,7 @@ def analyser_correlations_specifiques_poste(df, target_col, dossier_sauvegarde=N
     # Boucle de traçage avec zip
     for ax, (pos, feat, title) in zip(axes, pairs):
         # Extraction et nettoyage des données pour le couple (Poste, Feature)
-        sub = df[(df["pos_simple"] == pos) & df[[feat, target_col]].notna().all(axis=1)].copy()
+        sub = df[(df["position"] == pos) & df[[feat, target_col]].notna().all(axis=1)].copy()
         
         # Sécurité : Vérification du nombre de lignes disponibles
         if len(sub) < 2:
@@ -893,18 +893,18 @@ def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
     print("Analyse de la distribution des âges par poste")
 
     # Vérifications initiales
-    if "pos_simple" not in df.columns:
-        print("Annulé : La colonne 'pos_simple' est absente du DataFrame.")
+    if "position" not in df.columns:
+        print("Annulé : La colonne 'position' est absente du DataFrame.")
         return
     if "age" not in df.columns:
         print("Annulé : La colonne 'age' est absente du DataFrame.")
         return
 
-    pos_order = ["GK", "DF", "MF", "FW"]
-    df_pos = df[df["pos_simple"].isin(pos_order)].copy()
+    pos_order = ["Goalkeeper", "Defender", "Midfield", "Attack"]
+    df_pos = df[df["position"].isin(pos_order)].copy()
 
     if df_pos.empty:
-        print("Annulé : Aucun joueur trouvé pour les postes (GK, DF, MF, FW).")
+        print("Annulé : Aucun joueur trouvé pour les postes (Goalkeeper, Defender, Midfield, Attack).")
         return
 
     # Gestion de la palette de couleurs par défaut (One Dark Pro style comme tes codes précédents)
@@ -916,7 +916,7 @@ def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
     fig.suptitle("Distribution des âges par poste", fontsize=13, fontweight="bold")
 
     for pos, color in zip(pos_order, liste_couleurs):
-        ages = df_pos[df_pos["pos_simple"] == pos]["age"].dropna()
+        ages = df_pos[df_pos["position"] == pos]["age"].dropna()
         
         # On ne trace que s'il y a des données pour le poste en question
         if not ages.empty:
@@ -941,7 +941,7 @@ def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
 
     # Calcul et affichage des statistiques textuelles
     print("\nÂge médian par poste")
-    stats_mediane = df_pos.groupby("pos_simple")["age"].median().reindex(pos_order).round(1)
+    stats_mediane = df_pos.groupby("position")["age"].median().reindex(pos_order).round(1)
     print(stats_mediane.to_string())
 
 
@@ -1071,15 +1071,15 @@ def analyser_feature_engineering(df, target_col="valeur_marchande", dossier_sauv
 
 
 def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
-    """Génère une heatmap croisant les championnats (league) et les postes (pos_simple)
+    """Génère une heatmap croisant les championnats (league) et les postes (position)
 
     pour afficher la valeur marchande médiane (en M€) de chaque segment.
     """
     print("Analyse croisée : VM médiane par championnat et par poste")
 
     # Vérifications initiales des colonnes
-    if "pos_simple" not in df.columns:
-        print("Annulé : La colonne 'pos_simple' est absente du DataFrame.")
+    if "position" not in df.columns:
+        print("Annulé : La colonne 'position' est absente du DataFrame.")
         return
     if "league" not in df.columns:
         print("Annulé : La colonne 'league' est absente du DataFrame.")
@@ -1088,21 +1088,21 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
         print(f"Annulé : La colonne cible '{target_col}' est absente.")
         return
 
-    pos_order = ["GK", "DF", "MF", "FW"]
+    pos_order = ["Goalkeeper", "Defender", "Midfield", "Attack"]
     
     # Construction du tableau croisé (Pivot Table)
     # Filtrage des postes valides
-    df_filtrer = df[df["pos_simple"].isin(pos_order)]
+    df_filtrer = df[df["position"].isin(pos_order)]
     
     if df_filtrer.empty:
-        print("Annulé : Aucun joueur trouvé pour les postes (GK, DF, MF, FW).")
+        print("Annulé : Aucun joueur trouvé pour les postes (Goalkeeper, Defender, Midfield, Attack).")
         return
 
     # Calcul de la médiane par groupe, pivotement et conversion en Millions
     pivot = (
-        df_filtrer.groupby(["league", "pos_simple"])[target_col]
+        df_filtrer.groupby(["league", "position"])[target_col]
         .median()
-        .unstack("pos_simple")
+        .unstack("position")
         .reindex(columns=pos_order)
         / 1e6
     )
@@ -1257,7 +1257,7 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
         return
 
     # Extraction et affichage du tableau récapitulatif du top 20
-    id_cols_show = ["player", "pos_simple", "league", "season_label", "age",
+    id_cols_show = ["player", "position", "league", "season_label", "age",
                     target_col, "xg", "Performance_Gls", "injury_days_total"]
     id_cols_show = [c for c in id_cols_show if c in df_top.columns]
     
@@ -1329,7 +1329,7 @@ def analyser_residus_regression(df, target_col, dossier_sauvegarde=None, couleur
 
     détecte les joueurs sur/sous-évalués (> 2.5 std) et affiche les graphiques associés.
     """
-    print(f"Analyse des résidus de régression (xG → log({target_col})) ===")
+    print(f"Analyse des résidus de régression (xG → log({target_col}))")
 
     # Vérifications initiales
     if "xg" not in df.columns:
@@ -1344,7 +1344,7 @@ def analyser_residus_regression(df, target_col, dossier_sauvegarde=None, couleur
         couleurs_dict = {"cyan": "#56B6C2", "red": "#E06C75", "green": "#98C379", "blue": "#61AFEF"}
 
     # Préparation et nettoyage des données
-    colonnes_filtre = ["player", "pos_simple", "league", "age", "xg", target_col]
+    colonnes_filtre = ["player", "position", "league", "age", "xg", target_col]
     colonnes_presentes = [c for c in colonnes_filtre if c in df.columns]
     
     df_res = df[colonnes_presentes].dropna().copy()
@@ -1459,7 +1459,7 @@ def afficher_top_anomalies_valeur(df_res, target_col):
 
     et les 10 joueurs les plus sous-évalués en se basant sur les résidus de la régression.
     """
-    print(f"Top joueurs atypiques (Régression vs {target_col}) ===")
+    print(f"Top joueurs atypiques (Régression vs {target_col})")
 
     # Vérification de la présence de la colonne de classification des anomalies
     if "outlier_type" not in df_res.columns or "residual" not in df_res.columns:
@@ -1474,7 +1474,7 @@ def afficher_top_anomalies_valeur(df_res, target_col):
     # Configuration dynamique des colonnes à afficher
     cols_show = [
         "player",
-        "pos_simple",
+        "position",
         "league",
         "age",
         "xg",
@@ -1659,7 +1659,7 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
 
     par saison, affiche le bilan textuel et génère les graphiques d'évolution.
     """
-    print(f"Analyse de l'évolution temporelle par Saison (cible : {target_col}) ===")
+    print(f"Analyse de l'évolution temporelle par Saison (cible : {target_col})")
 
     # Vérifications initiales des colonnes
     if "season_label" not in df.columns:
