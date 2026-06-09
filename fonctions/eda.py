@@ -11,6 +11,7 @@ from scipy.stats import pearsonr
 
 warnings.filterwarnings("ignore")
 
+
 plt.rcParams.update({
     "figure.dpi": 120,
     "axes.spines.top": False,
@@ -30,15 +31,14 @@ COLORS = {
 }
 
 
-
 # On définit le dossier de destination
-dossier_sortie = Path("../output")
+dossier_sortie = Path("../outputs/eda")
 
 # On force la création du dossier s'il n'existe pas encore
 dossier_sortie.mkdir(exist_ok=True)
 
 
-def analyser_types_et_stats(df):
+def analyser_types(df):
     """Affiche le nombre de variables par type (numériques/catégorielles)
 
     ainsi que les statistiques descriptives des variables numériques.
@@ -52,17 +52,6 @@ def analyser_types_et_stats(df):
     # Affichage des comptes
     print(f"Variables numériques   : {len(num_cols)}")
     print(f"Variables catégorielles: {len(cat_cols)}")
-
-    # Affichage des statistiques descriptives s'il y a des colonnes numériques
-    print("\nStatistiques descriptives (variables numériques)")
-    if len(num_cols) > 0:
-        print(df[num_cols].describe().T.to_string())
-    else:
-        print("Aucune variable numérique dans ce DataFrame.")
-
-
-
-
 
 
 def analyser_valeurs_manquantes(df, dossier_sauvegarde=None):
@@ -113,41 +102,6 @@ def analyser_valeurs_manquantes(df, dossier_sauvegarde=None):
 
     # Affichage à l'écran
     plt.show()
-
-
-
-
-def analyser_doublons(df, id_cols=None):
-    """Vérifie la présence de lignes dupliquées globales dans le DataFrame
-
-    et sur un sous-ensemble de colonnes (clés d'identification).
-    """
-    if id_cols is None:
-        id_cols = ["player_id", "season"]
-
-    print("Analyse des doublons")
-
-    # Doublons globaux (lignes strictement identiques)
-    nb_dup = df.duplicated().sum()
-    print(f"Lignes dupliquées (toutes colonnes) : {nb_dup}")
-
-    # Doublons sur les clés spécifiques
-    # On vérifie si toutes les colonnes demandées existent dans le DataFrame
-    colonnes_presentes = [c for c in id_cols if c in df.columns]
-
-    if len(colonnes_presentes) == len(id_cols):
-        nb_dup_id = df.duplicated(subset=id_cols).sum()
-        print(f"Doublons sur ({', '.join(id_cols)}) : {nb_dup_id}")
-    else:
-        # Si certaines colonnes manquent, on prévient l'utilisateur sans faire planter le code
-        manquantes = set(id_cols) - set(colonnes_presentes)
-        print(
-            f"Impossible de vérifier les doublons spécifiques. Colonne(s) manquante(s) : {', '.join(manquantes)}"
-        )
-
-
-
-
 
 
 def analyser_variable_cible(df, target_col="valeur_marchande", dossier_sauvegarde=None):
@@ -208,10 +162,6 @@ def analyser_variable_cible(df, target_col="valeur_marchande", dossier_sauvegard
 
     # Affichage
     plt.show()
-
-
-
-
 
 
 def analyser_distributions_numeriques(df, cols_a_analyser=None, dossier_sauvegarde=None):
@@ -296,26 +246,32 @@ def analyser_distributions_numeriques(df, cols_a_analyser=None, dossier_sauvegar
     plt.show()
 
 
-
-
-
-
-
 def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
     """Analyse les variables catégorielles du DataFrame : affiche les comptages textuels,
-
     génère les graphiques de répartition et croise les catégories avec la variable cible (boxplots).
+    Gère la colonne 'league' encodée en One-Hot (league_*).
     """
     print("Analyse des variables catégorielles")
 
-    # Affichage textuel des value_counts pour les variables clés
-    key_cat = ["pos", "league", "season"]
+    # Identification dynamique des colonnes de ligues encodées
+    cols_league = [c for c in df.columns if c.startswith("league_")]
+
+    # Affichage textuel des value_counts pour les variables clés restantes
+    key_cat = ["pos", "season"]
     key_cat = [c for c in key_cat if c in df.columns]
 
     for col in key_cat:
         vc = df[col].value_counts()
         print(f"\n{col} ({vc.shape[0]} modalités) :")
         print(vc.head(20).to_string())
+
+    # Affichage textuel pour les ligues encodées (somme des 1)
+    if cols_league:
+        print(f"\nleague ({len(cols_league)} modalités encodées) :")
+        # On fait la somme des 1 pour chaque colonne et on nettoie le nom pour l'affichage
+        vc_league = pd.Series({c.replace("league_", ""): df[c].sum() for c in cols_league})
+        vc_league = vc_league.sort_values(ascending=False)
+        print(vc_league.to_string())
 
     # Préparation de la sauvegarde
     sauvegarder = dossier_sauvegarde is not None
@@ -338,21 +294,36 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
             print("\nplayers_top_nations.png sauvegardé")
         plt.show()
 
-    # Graphiques : Répartition Poste & Championnat
-    for col in ["pos", "league"]:
-        if col not in df.columns:
-            continue
-        vc = df[col].value_counts()
+    # Graphique : Répartition Poste
+    if "pos" in df.columns:
+        vc = df["pos"].value_counts()
         fig, ax = plt.subplots(figsize=(10, 4))
         vc.plot(kind="bar", ax=ax, color="#61AFEF")
-        ax.set_title(f"Répartition : {col}")
+        ax.set_title("Répartition : pos")
         ax.set_ylabel("Count")
         plt.xticks(rotation=30, ha="right")
         plt.tight_layout()
         
         if sauvegarder:
-            plt.savefig(chemin_dossier / f"{col}.png")
-            print(f"{col}.png sauvegardé")
+            plt.savefig(chemin_dossier / "pos.png")
+            print("pos.png sauvegardé")
+        plt.show()
+
+    # Graphique : Répartition Championnat (version One-Hot)
+    if cols_league:
+        # On récupère le total de joueurs par ligue
+        league_counts = pd.Series({c.replace("league_", ""): df[c].sum() for c in cols_league}).sort_values(ascending=False)
+        
+        fig, ax = plt.subplots(figsize=(10, 4))
+        league_counts.plot(kind="bar", ax=ax, color="#61AFEF")
+        ax.set_title("Répartition : league (One-Hot)")
+        ax.set_ylabel("Count")
+        plt.xticks(rotation=30, ha="right")
+        plt.tight_layout()
+        
+        if sauvegarder:
+            plt.savefig(chemin_dossier / "league.png")
+            print("league.png sauvegardé")
         plt.show()
 
     # Vérification de la présence de la cible pour les analyses croisées
@@ -369,7 +340,7 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
             groups = [df_pos.loc[df_pos["pos"] == p, target_col].values / 1e6 for p in order]
             ax.boxplot(groups, labels=order, patch_artist=True,
                        boxprops=dict(facecolor="#98C379", alpha=0.5))
-            ax.set_title(f"Valeur Marchande par poste (Trié par médiane décroissante)")
+            ax.set_title("Valeur Marchande par poste (Trié par médiane décroissante)")
             ax.set_ylabel("VM (M€)")
             plt.xticks(rotation=30, ha="right")
             plt.tight_layout()
@@ -379,16 +350,30 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
                 print("vm_par_pos.png sauvegardé")
             plt.show()
 
-    # Boxplot : Variable Cible par Championnat
-    if "league" in df.columns:
-        df_ligue = df[[target_col, "league"]].dropna()
-        if not df_ligue.empty:
-            order_l = df_ligue.groupby("league")[target_col].median().sort_values(ascending=False).index
+    # Boxplot : Variable Cible par Championnat (reconstitué depuis le One-Hot)
+    if cols_league:
+        groups_l = []
+        labels_l = []
+        medians_l = []
+
+        # Pour chaque colonne de ligue, on extrait les valeurs de la cible là où la ligue vaut 1
+        for col in cols_league:
+            values = df.loc[df[col] == 1, target_col].dropna().values / 1e6
+            if len(values) > 0:
+                groups_l.append(values)
+                labels_l.append(col.replace("league_", ""))
+                medians_l.append(pd.Series(values).median())
+        
+        if groups_l:
+            # Tri des ligues par leur médiane décroissante
+            sorted_indices = pd.Series(medians_l).sort_values(ascending=False).index
+            groups_l = [groups_l[i] for i in sorted_indices]
+            labels_l = [labels_l[i] for i in sorted_indices]
+
             fig, ax = plt.subplots(figsize=(14, 5))
-            groups_l = [df_ligue.loc[df_ligue["league"] == l, target_col].values / 1e6 for l in order_l]
-            ax.boxplot(groups_l, labels=order_l, patch_artist=True,
+            ax.boxplot(groups_l, labels=labels_l, patch_artist=True,
                        boxprops=dict(facecolor="#C678DD", alpha=0.5))
-            ax.set_title(f"Valeur Marchande par championnat (Trié par médiane décroissante)")
+            ax.set_title("Valeur Marchande par championnat (Trié par médiane décroissante)")
             ax.set_ylabel("VM (M€)")
             plt.xticks(rotation=30, ha="right")
             plt.tight_layout()
@@ -397,10 +382,6 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
                 plt.savefig(chemin_dossier / "vm_par_league.png")
                 print("vm_par_league.png sauvegardé")
             plt.show()
-
-
-
-
 
 
 def analyser_outliers(df, cols_a_analyser=None):
@@ -472,114 +453,6 @@ def analyser_outliers(df, cols_a_analyser=None):
     # Réorganisation esthétique des colonnes
     colonnes_ordre = ["variable", "outliers_IQR", "pct_IQR", "outliers_Zscore", "total"]
     print(df_out[colonnes_ordre].to_string(index=False))
-
-
-
-
-
-
-def analyser_relations_cible(df, target_col, variables_regresseurs=None, dossier_sauvegarde=None):
-    """Génère une grille de graphiques en nuages de points (scatter plots) avec droites de régression
-
-    pour analyser la relation entre des variables explicatives et la variable cible.
-    """
-    print(f"Analyse des relations avec la variable cible : {target_col}")
-
-    # Vérification de la présence de la cible
-    if target_col not in df.columns:
-        print(f"Erreur : La colonne cible '{target_col}' n'existe pas dans le DataFrame.")
-        return
-
-    # Liste des variables et labels par défaut
-    if variables_regresseurs is None:
-        variables_regresseurs = [
-            ("age", "Âge"),
-            ("xg", "xG"),
-            ("xa", "xA"),
-            ("Performance_Gls", "Buts"),
-            ("Performance_Ast", "Passes décisives"),
-            ("Playing Time_Min", "Minutes jouées"),
-            ("injury_days_total", "Jours blessés"),
-            ("injury_nb_total", "Nb blessures"),
-        ]
-
-    # Filtrage pour ne garder que les colonnes réellement présentes
-    scatter_vars = [(c, l) for c, l in variables_regresseurs if c in df.columns]
-
-    if not scatter_vars:
-        print("Aucune des variables spécifiées n'est présente dans le DataFrame.")
-        return
-
-    # Configuration dynamique de la grille de graphiques
-    n_cols_s = 4
-    n_rows_s = int(np.ceil(len(scatter_vars) / n_cols_s))
-    
-    fig, axes = plt.subplots(n_rows_s, n_cols_s, figsize=(22, 5 * n_rows_s))
-    
-    # Sécurité pour s'assurer qu'axes est toujours un tableau plat
-    if isinstance(axes, np.ndarray):
-        axes = axes.flatten()
-    else:
-        axes = np.array([axes])
-
-    # Boucle de traçage des scatter plots
-    i = 0
-    for i, (col, label) in enumerate(scatter_vars):
-        # Nettoyage des données par paire (variable, cible)
-        sub = df[[col, target_col]].dropna()
-        
-        # S'il n'y a pas assez de données (minimum 2 points requis pour une régression)
-        if len(sub) < 2:
-            axes[i].text(0.5, 0.5, "Pas assez de données\npour corréler", 
-                         ha="center", va="center", color="gray")
-            axes[i].set_title(label)
-            continue
-
-        try:
-            # Calcul du coefficient de corrélation de Pearson (avec log1p sur la cible comme ton code d'origine)
-            r, p = stats.pearsonr(sub[col], np.log1p(sub[target_col]))
-            p_label = '<0.001' if p < 0.001 else f'{p:.3f}'
-            titre_graphique = f"{label}\n(r={r:.2f}, p={p_label})"
-            
-            # Droite de régression (sur la valeur brute en millions)
-            m, b = np.polyfit(sub[col], sub[target_col] / 1e6, 1)
-            x_line = np.linspace(sub[col].min(), sub[col].max(), 100)
-            axes[i].plot(x_line, m * x_line + b, color="#E06C75", linewidth=1.5)
-            
-        except Exception:
-            # En cas de variance nulle ou d'erreur mathématique
-            titre_graphique = f"{label}\n(Calcul corrélation impossible)"
-
-        # Tracé du nuage de points (valeurs de la cible divisées par 1e6 pour l'échelle M€)
-        axes[i].scatter(sub[col], sub[target_col] / 1e6,
-                        alpha=0.15, s=10, color="#56B6C2", rasterized=True)
-        
-        axes[i].set_xlabel(label)
-        axes[i].set_ylabel(f"{target_col} (M€)")
-        axes[i].set_title(titre_graphique)
-
-    # Masquer les sous-graphiques vides de la grille
-    for j in range(i + 1, len(axes)):
-        axes[j].set_visible(False)
-
-    fig.suptitle(f"Relation entre chaque variable et la variable : {target_col}", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-
-    # Gestion de la sauvegarde
-    if dossier_sauvegarde is not None:
-        chemin_dossier = Path(dossier_sauvegarde)
-        chemin_dossier.mkdir(exist_ok=True)
-        chemin_fichier = chemin_dossier / f"relations_{target_col}.png"
-        
-        plt.savefig(chemin_fichier)
-        print(f"\nGraphique sauvegardé sous : {chemin_fichier}")
-
-    # Affichage
-    plt.show()
-
-
-
-
 
 
 def analyser_correlations(df, target_col, cols_cles=None, dossier_sauvegarde=None):
@@ -671,10 +544,6 @@ def analyser_correlations(df, target_col, cols_cles=None, dossier_sauvegarde=Non
         print(full_corr.head(20).to_string())
     else:
         print("Aucune autre variable numérique trouvée dans le dataframe pour l'analyse globale.")
-
-
-
-
 
 
 def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
@@ -773,118 +642,6 @@ def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_
     plt.show()
 
 
-
-
-
-
-
-def analyser_correlations_specifiques_poste(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
-    """Génère des graphiques de corrélation ciblés (xG et xA vs Valeur Marchande)
-
-    spécifiquement pour les Attaquants (FW) et les Milieux (MF).
-    """
-    print("Analyse des corrélations spécifiques par poste")
-
-    # Vérifications initiales
-    if "position" not in df.columns:
-        print("Annulé : La colonne 'position' est absente du DataFrame.")
-        return
-        
-    if target_col not in df.columns:
-        print(f"Annulé : La colonne cible '{target_col}' est absente.")
-        return
-
-    # Gestion des couleurs par défaut
-    if couleurs_dict is None:
-        couleurs_dict = {"cyan": "#56B6C2", "red": "#E06C75"}
-
-    # Définition des paires à analyser (Poste, Feature, Titre visuel)
-    pairs = [
-        ("Attack", "xg", "xG → VM  (Attaquants)"),
-        ("Midfield", "xg", "xG → VM  (Milieux)"),
-        ("Midfield", "xa", "xA → VM  (Milieux)"),
-    ]
-
-    # Filtrer les paires pour ne garder que les features existantes
-    pairs = [(p, f, t) for p, f, t in pairs if f in df.columns]
-
-    if not pairs:
-        print("Aucune des fonctionnalités (xg, xa) n'est présente dans le DataFrame.")
-        return
-
-    # Configuration de la grille de graphiques
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle("Corrélations spécifiques par poste", fontsize=13, fontweight="bold")
-
-    # Si axes n'est pas un tableau (au cas où il n'y aurait qu'un seul graphique généré)
-    if not isinstance(axes, np.ndarray):
-        axes = np.array([axes])
-
-    # Boucle de traçage avec zip
-    for ax, (pos, feat, title) in zip(axes, pairs):
-        # Extraction et nettoyage des données pour le couple (Poste, Feature)
-        sub = df[(df["position"] == pos) & df[[feat, target_col]].notna().all(axis=1)].copy()
-        
-        # Sécurité : Vérification du nombre de lignes disponibles
-        if len(sub) < 2:
-            ax.text(0.5, 0.5, f"Pas assez de données\npour {pos} ({feat})", 
-                    ha="center", va="center", color="gray")
-            ax.set_title(title)
-            continue
-
-        try:
-            # Calcul du coefficient de corrélation de Pearson (avec log1p sur la cible)
-            r, p = pearsonr(sub[feat], np.log1p(sub[target_col]))
-            p_label = '<0.001' if p < 0.001 else f'{p:.3f}'
-            titre_graphique = f"{title}\nr={r:.2f}  p={p_label}"
-            
-            # Calcul de la droite de régression (sur la valeur brute en millions)
-            m, b = np.polyfit(sub[feat], sub[target_col] / 1e6, 1)
-            x_l = np.linspace(sub[feat].min(), sub[feat].max(), 100)
-            ax.plot(x_l, m * x_l + b, color=couleurs_dict.get("red", "#E06C75"), lw=1.8)
-            
-        except Exception:
-            # Sécurité en cas de variance nulle (ex: tous les xG sont à 0)
-            titre_graphique = f"{title}\n(Calcul impossible)"
-
-        # Tracé du nuage de points
-        ax.scatter(
-            sub[feat], 
-            sub[target_col] / 1e6, 
-            alpha=0.2, 
-            s=12,
-            color=couleurs_dict.get("cyan", "#56B6C2"), 
-            rasterized=True
-        )
-        
-        ax.set_title(titre_graphique)
-        ax.set_xlabel(feat)
-        ax.set_ylabel("VM (M€)")
-
-    # Masquer les axes restants si jamais il y a moins de 3 graphiques tracés
-    for j in range(len(pairs), len(axes)):
-        axes[j].set_visible(False)
-
-    plt.tight_layout()
-
-    # Gestion de la sauvegarde
-    if dossier_sauvegarde is not None:
-        chemin_dossier = Path(dossier_sauvegarde)
-        chemin_dossier.mkdir(exist_ok=True)
-        chemin_fichier = chemin_dossier / "segmentation_par_poste_corr_poste.png"
-        
-        plt.savefig(chemin_fichier)
-        print(f"\nGraphique sauvegardé sous : {chemin_fichier}")
-
-    # Affichage
-    plt.show()
-
-
-
-
-
-
-
 def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
     """Génère un histogramme superposé de la distribution des âges pour chaque poste (GK, DF, MF, FW)
 
@@ -945,134 +702,8 @@ def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
     print(stats_mediane.to_string())
 
 
-
-
-
-
-
-def analyser_feature_engineering(df, target_col="valeur_marchande", dossier_sauvegarde=None, couleurs_dict=None):
-    """Calcule de nouvelles variables (Feature Engineering), affiche leur corrélation avec la cible
-
-    et génère une grille de graphiques de régression.
-    """
-    print("Feature engineering exploratoire")
-
-    # Vérifications initiales
-    if target_col not in df.columns:
-        print(f"Annulé : La colonne cible '{target_col}' est absente du DataFrame.")
-        return
-
-    # Gestion des couleurs par défaut
-    if couleurs_dict is None:
-        couleurs_dict = {"cyan": "#56B6C2", "red": "#E06C75"}
-
-    # Calcul des nouvelles features sur une copie de travail
-    dfe = df.copy()
-    
-    # Dictionnaire pour mapper les calculs de manière sécurisée (vérification des colonnes sources)
-    colonnes_requises = ["Performance_Gls", "xg", "Playing Time_Min", "Playing Time_MP", "injury_days_total", "age"]
-    manquantes = [c for c in colonnes_requises if c not in dfe.columns]
-    
-    if manquantes:
-        print(f"Attention : Certaines colonnes sources sont manquantes ({', '.join(manquantes)}).")
-        print("Le calcul de certaines nouvelles variables peut échouer.")
-
-    # Calculs avec gestion des divisions par zéro
-    dfe["ratio_buts_xg"] = (dfe.get("Performance_Gls", 0) / (dfe.get("xg", 0) + 1e-6)).clip(upper=5)
-    dfe["ratio_min_mp"]  = (dfe.get("Playing Time_Min", 0) / (dfe.get("Playing Time_MP", 0) + 1e-6))
-    dfe["taux_indispo"]  = (dfe.get("injury_days_total", 0) / (dfe.get("Playing Time_Min", 0) + 1)).clip(upper=1)
-    dfe["age_x_xg"]      = dfe.get("age", 0) * dfe.get("xg", 0)
-
-    # Définition des labels pour les graphiques
-    new_features = {
-        "ratio_buts_xg": "Buts / xG\n(sur/sous-performance)",
-        "ratio_min_mp":  "Min / Match\n(titulaire régulier ?)",
-        "taux_indispo":  "Jours blessés / Minutes\n(taux d'indispo)",
-        "age_x_xg":      "Âge × xG\n(interaction)",
-    }
-
-    # Configuration de la grille de graphiques (2x2)
-    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
-    fig.suptitle(f"Features engineered vs {target_col}", fontsize=13, fontweight="bold")
-    axes = axes.flatten()
-
-    # Boucle de traçage des graphiques
-    for ax, (feat, label) in zip(axes, new_features.items()):
-        # Nettoyage des valeurs manquantes et infinies
-        sub = dfe[[feat, target_col]].dropna()
-        sub = sub[np.isfinite(sub[feat]) & np.isfinite(sub[target_col])]
-        
-        if len(sub) < 2:
-            ax.text(0.5, 0.5, f"Données insuffisantes\npour {feat}", ha="center", va="center", color="gray")
-            ax.set_title(label)
-            continue
-
-        # Tracé du nuage de points
-        ax.scatter(
-            sub[feat], 
-            sub[target_col] / 1e6, 
-            alpha=0.15, 
-            s=10,
-            color=couleurs_dict.get("cyan", "#56B6C2"), 
-            rasterized=True
-        )
-
-        try:
-            # Calcul du coefficient de corrélation (Pearson sur log de la cible)
-            r, p = pearsonr(sub[feat], np.log1p(sub[target_col]))
-            p_label = '<0.001' if p < 0.001 else f'{p:.3f}'
-            titre_graphique = f"{label}\nr={r:.2f}  p={p_label}"
-
-            # Calcul et tracé de la droite de régression (sur la plage de quantiles 1% à 99%)
-            m, b = np.polyfit(sub[feat], sub[target_col] / 1e6, 1)
-            x_l = np.linspace(sub[feat].quantile(0.01), sub[feat].quantile(0.99), 100)
-            ax.plot(x_l, m * x_l + b, color=couleurs_dict.get("red", "#E06C75"), lw=2)
-            
-        except Exception:
-            titre_graphique = f"{label}\n(Calcul régression impossible)"
-
-        ax.set_title(titre_graphique)
-        ax.set_xlabel(feat)
-        ax.set_ylabel(f"{target_col} (M€)")
-
-    plt.tight_layout()
-
-    # Gestion de la sauvegarde
-    if dossier_sauvegarde is not None:
-        chemin_dossier = Path(dossier_sauvegarde)
-        chemin_dossier.mkdir(exist_ok=True)
-        chemin_fichier = chemin_dossier / "feature_engineering.png"
-        
-        plt.savefig(chemin_fichier)
-        print(f"\nGraphique sauvegardé sous : {chemin_fichier}")
-
-    plt.show()
-
-    # Résumé textuel des corrélations
-    print(f"\nCorrélations (Pearson sur log {target_col}) — features engineered :")
-    for feat, label in new_features.items():
-        sub = dfe[[feat, target_col]].dropna()
-        sub = sub[np.isfinite(sub[feat]) & np.isfinite(sub[target_col])]
-        
-        if len(sub) >= 2:
-            try:
-                r, p = pearsonr(sub[feat], np.log1p(sub[target_col]))
-                p_label = '<0.001' if p < 0.001 else f'{p:.3f}'
-                print(f"  {feat:<20} r={r:+.3f}  p={p_label}")
-            except Exception:
-                print(f"  {feat:<20} Calcul de corrélation impossible.")
-        else:
-            print(f"  {feat:<20} Pas assez de données valides.")
-
-
-
-
-
-
-
 def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
-    """Génère une heatmap croisant les championnats (league) et les postes (position)
-
+    """Génère une heatmap croisant les championnats (colonnes league_*) et les postes (position)
     pour afficher la valeur marchande médiane (en M€) de chaque segment.
     """
     print("Analyse croisée : VM médiane par championnat et par poste")
@@ -1081,36 +712,55 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
     if "position" not in df.columns:
         print("Annulé : La colonne 'position' est absente du DataFrame.")
         return
-    if "league" not in df.columns:
-        print("Annulé : La colonne 'league' est absente du DataFrame.")
-        return
+        
     if target_col not in df.columns:
         print(f"Annulé : La colonne cible '{target_col}' est absente.")
         return
 
+    # Identification dynamique des colonnes de ligues encodées
+    cols_league = [c for c in df.columns if c.startswith("league_")]
+    if not cols_league:
+        print("Annulé : Aucune colonne commençant par 'league_' n'a été trouvée.")
+        return
+
     pos_order = ["Goalkeeper", "Defender", "Midfield", "Attack"]
     
-    # Construction du tableau croisé (Pivot Table)
-    # Filtrage des postes valides
+    # Filtrage des postes valides à l'avance
     df_filtrer = df[df["position"].isin(pos_order)]
-    
     if df_filtrer.empty:
         print("Annulé : Aucun joueur trouvé pour les postes (Goalkeeper, Defender, Midfield, Attack).")
         return
 
-    # Calcul de la médiane par groupe, pivotement et conversion en Millions
-    pivot = (
-        df_filtrer.groupby(["league", "position"])[target_col]
-        .median()
-        .unstack("position")
-        .reindex(columns=pos_order)
-        / 1e6
-    )
+    rows_pivot = {}
+
+    for col in cols_league:
+        # On extrait le nom propre de la ligue (ex: "league_ESP-La Liga" -> "ESP-La Liga")
+        nom_ligue = col.replace("league_", "")
+        
+        # On filtre le DataFrame pour n'avoir que les joueurs de cette ligue spécifique
+        df_ligue = df_filtrer[df_filtrer[col] == 1]
+        
+        # On calcule la médiane de la cible par poste pour cette ligue
+        # .reindex(pos_order) garantit que tous les postes existent (quitte à mettre du NaN)
+        medians_par_poste = df_ligue.groupby("position")[target_col].median().reindex(pos_order)
+        
+        # On stocke le résultat (converti en Millions d'euros)
+        rows_pivot[nom_ligue] = medians_par_poste / 1e6
+
+    # Création du DataFrame final pour la heatmap
+    pivot = pd.DataFrame.from_dict(rows_pivot, orient='index')
 
     # Sécurité : Si un championnat n'a aucun joueur à un poste donné, on remplace le NaN par 0
     pivot = pivot.fillna(0)
 
-    # Génération de la Heatmap
+    # Si toutes les valeurs du pivot sont à 0, on arrête pour éviter un graphique vide
+    if pivot.sum().sum() == 0:
+        print("Annulé : Le tableau croisé ne contient que des zéros ou des données vides.")
+        return
+
+    # Optionnel : Trier les lignes (championnats) par la valeur médiane globale pour un plus joli visuel
+    pivot = pivot.loc[pivot.median(axis=1).sort_values(ascending=False).index]
+
     fig, ax = plt.subplots(figsize=(10, 6))
     
     sns.heatmap(
@@ -1141,57 +791,52 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
     plt.show()
 
 
-
-
-
-
-
 def analyser_distribution_violin_league(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
     """Génère un graphique en violon (Violin plot) pour analyser la distribution et la densité
-
-    de la variable cible (en M€) à travers les différents championnats (league).
+    de la variable cible (en M€) à travers les différents championnats (colonnes league_*).
     """
     print("Analyse de la distribution par championnat")
 
     # Vérifications initiales des colonnes
-    if "league" not in df.columns:
-        print("Annulé : La colonne 'league' est absente du DataFrame.")
-        return
     if target_col not in df.columns:
         print(f"Annulé : La colonne cible '{target_col}' est absente.")
+        return
+
+    # Identification dynamique des colonnes de ligues encodées
+    cols_league = [c for c in df.columns if c.startswith("league_")]
+    if not cols_league:
+        print("Annulé : Aucune colonne commençant par 'league_' n'a été trouvée.")
         return
 
     # Gestion des couleurs par défaut
     if couleurs_dict is None:
         couleurs_dict = {"purple": "#C678DD", "red": "#E06C75"}
 
-    # Préparation et tri des données par médiane décroissante
-    leagues = df["league"].dropna().unique().tolist()
-    df_ligue = df[df["league"].isin(leagues)].copy()
-    
-    if df_ligue.empty:
-        print("Annulé : Le DataFrame ne contient aucune donnée valide pour la colonne 'league'.")
-        return
+    leagues_data = {}
+    medians_l = {}
 
-    # Calcul de l'ordre d'affichage basé sur la médiane
-    order_vm = df_ligue.groupby("league")[target_col].median().sort_values(ascending=False).index
-
-    # Extraction des données sous forme de listes de tableaux numpy (conversion en Millions d'Euros)
-    data_violin = []
-    labels_valides = []
-    
-    for l in order_vm:
-        values = df_ligue[df_ligue["league"] == l][target_col].dropna().values / 1e6
+    for col in cols_league:
+        nom_ligue = col.replace("league_", "")
+        
+        # Sélection des valeurs de la cible pour les joueurs de cette ligue (valeur == 1)
+        values = df.loc[df[col] == 1, target_col].dropna().values / 1e6
+        
         # Sécurité : On s'assure qu'il y a assez de points pour construire un violon (minimum 2 requis)
         if len(values) >= 2:
-            data_violin.append(values)
-            labels_valides.append(l)
+            leagues_data[nom_ligue] = values
+            medians_l[nom_ligue] = pd.Series(values).median()
 
-    if not data_violin:
+    if not leagues_data:
         print("Annulé : Pas assez de données numériques valides pour générer les violons.")
         return
 
-    # Génération du Violin plot Matplotlib
+    # Calcul de l'ordre d'affichage basé sur la médiane décroissante
+    order_vm = pd.Series(medians_l).sort_values(ascending=False).index
+
+    # Extraction ordonnée des données et des labels pour le graphique
+    data_violin = [leagues_data[l] for l in order_vm]
+    labels_valides = list(order_vm)
+
     fig, ax = plt.subplots(figsize=(14, 6))
     fig.suptitle(f"Distribution de {target_col} par championnat", fontsize=13, fontweight="bold")
     
@@ -1226,11 +871,6 @@ def analyser_distribution_violin_league(df, target_col, dossier_sauvegarde=None,
     plt.show()
 
 
-
-
-
-
-
 def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
     """Filtre les joueurs d'élite (>= 100M€), affiche leur récapitulatif textuel
 
@@ -1257,7 +897,7 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
         return
 
     # Extraction et affichage du tableau récapitulatif du top 20
-    id_cols_show = ["player", "position", "league", "season_label", "age",
+    id_cols_show = ["player", "position","age",
                     target_col, "xg", "Performance_Gls", "injury_days_total"]
     id_cols_show = [c for c in id_cols_show if c in df_top.columns]
     
@@ -1317,272 +957,6 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
 
     # Affichage
     plt.show()
-
-
-
-
-
-
-
-def analyser_residus_regression(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
-    """Effectue une régression linéaire xG -> log(VM), calcule les résidus,
-
-    détecte les joueurs sur/sous-évalués (> 2.5 std) et affiche les graphiques associés.
-    """
-    print(f"Analyse des résidus de régression (xG → log({target_col}))")
-
-    # Vérifications initiales
-    if "xg" not in df.columns:
-        print("Annulé : La colonne 'xg' est absente du DataFrame.")
-        return
-    if target_col not in df.columns:
-        print(f"Annulé : La colonne cible '{target_col}' est absente.")
-        return
-
-    # Gestion des couleurs par défaut
-    if couleurs_dict is None:
-        couleurs_dict = {"cyan": "#56B6C2", "red": "#E06C75", "green": "#98C379", "blue": "#61AFEF"}
-
-    # Préparation et nettoyage des données
-    colonnes_filtre = ["player", "position", "league", "age", "xg", target_col]
-    colonnes_presentes = [c for c in colonnes_filtre if c in df.columns]
-    
-    df_res = df[colonnes_presentes].dropna().copy()
-    df_res = df_res[np.isfinite(df_res["xg"]) & (df_res[target_col] > 0)]
-
-    if len(df_res) < 5:
-        print("Annulé : Pas assez d'observations valides pour entraîner la régression.")
-        return
-
-    # Entraînement de la régression linéaire
-    X = df_res["xg"].values.reshape(-1, 1)
-    y = np.log1p(df_res[target_col].values)
-
-    reg = LinearRegression().fit(X, y)
-    df_res["vm_pred_log"] = reg.predict(X)
-    df_res["residual"] = y - df_res["vm_pred_log"]
-
-    # 4. Identification des Outliers (> 2.5 écarts-types)
-    std_r = df_res["residual"].std()
-    df_res["outlier_type"] = "Normal"
-    
-    if std_r > 0:
-        df_res.loc[df_res["residual"] >  2.5 * std_r, "outlier_type"] = "Sur-évalué"
-        df_res.loc[df_res["residual"] < -2.5 * std_r, "outlier_type"] = "Sous-évalué"
-
-    n_sur = (df_res["outlier_type"] == "Sur-évalué").sum()
-    n_sous = (df_res["outlier_type"] == "Sous-évalué").sum()
-    
-    print(f"\nRégression xG → log({target_col})  |  R²={reg.score(X, y):.3f}")
-    print(f"  Sur-évalués  (résidu > +2.5σ) : {n_sur}")
-    print(f"  Sous-évalués (résidu < -2.5σ) : {n_sous}")
-
-    # Mapping des couleurs
-    color_map = {
-        "Normal": couleurs_dict.get("cyan", "#56B6C2"), 
-        "Sur-évalué": couleurs_dict.get("red", "#E06C75"), 
-        "Sous-évalué": couleurs_dict.get("green", "#98C379")
-    }
-
-    # Construction de la figure (1 ligne, 2 colonnes)
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    fig.suptitle(f"Résidus de la régression xG → log({target_col})", fontsize=13, fontweight="bold")
-
-    # Graphique 1 : Nuage de points xG vs Cible brute (M€)
-    for group, color in color_map.items():
-        sub = df_res[df_res["outlier_type"] == group]
-        alpha = 0.12 if group == "Normal" else 0.7
-        size = 8 if group == "Normal" else 20
-        axes[0].scatter(
-            sub["xg"], 
-            sub[target_col].values / 1e6,
-            alpha=alpha, 
-            s=size, 
-            color=color, 
-            label=group, 
-            rasterized=True
-        )
-
-    # Tracé de la courbe de tendance exponentielle convertie en Millions
-    x_line = np.linspace(df_res["xg"].min(), df_res["xg"].max(), 100).reshape(-1, 1)
-    axes[0].plot(
-        x_line, 
-        np.expm1(reg.predict(x_line)) / 1e6,
-        color="black", 
-        lw=1.5, 
-        linestyle="--", 
-        label="Régression"
-    )
-    axes[0].set_xlabel("xG")
-    axes[0].set_ylabel(f"{target_col} (M€)")
-    axes[0].set_title("xG vs VM")
-    axes[0].legend()
-
-    # Graphique 2 : Distribution des résidus
-    axes[1].hist(
-        df_res["residual"], 
-        bins=60, 
-        color=couleurs_dict.get("blue", "#61AFEF"), 
-        edgecolor="white", 
-        linewidth=0.3
-    )
-    axes[1].axvline(2.5 * std_r, color=couleurs_dict.get("red", "#E06C75"), linestyle="--", label="+2.5σ")
-    axes[1].axvline(-2.5 * std_r, color=couleurs_dict.get("green", "#98C379"), linestyle="--", label="-2.5σ")
-    axes[1].set_title("Distribution des résidus")
-    axes[1].set_xlabel("Résidu (log scale)")
-    axes[1].legend()
-
-    plt.tight_layout()
-
-    # Gestion de la sauvegarde
-    if dossier_sauvegarde is not None:
-        chemin_dossier = Path(dossier_sauvegarde)
-        chemin_dossier.mkdir(exist_ok=True)
-        chemin_fichier = chemin_dossier / "outliers_residus.png"
-        
-        plt.savefig(chemin_fichier)
-        print(f"\nGraphique sauvegardé sous : {chemin_fichier}")
-
-    # Affichage
-    plt.show()
-    
-    # On renvoie le DataFrame de l'analyse si l'utilisateur souhaite inspecter la liste des joueurs concernés
-    return df_res
-
-
-
-
-
-
-def afficher_top_anomalies_valeur(df_res, target_col):
-    """Filtre et affiche les tableaux des 10 joueurs les plus sur-évalués
-
-    et les 10 joueurs les plus sous-évalués en se basant sur les résidus de la régression.
-    """
-    print(f"Top joueurs atypiques (Régression vs {target_col})")
-
-    # Vérification de la présence de la colonne de classification des anomalies
-    if "outlier_type" not in df_res.columns or "residual" not in df_res.columns:
-        print(
-            "Erreur : Le DataFrame fourni ne contient pas les colonnes 'outlier_type' ou 'residual'."
-        )
-        print(
-            "Veuillez exécuter la fonction 'analyser_residus_regression' au préalable."
-        )
-        return
-
-    # Configuration dynamique des colonnes à afficher
-    cols_show = [
-        "player",
-        "position",
-        "league",
-        "age",
-        "xg",
-        target_col,
-        "residual",
-    ]
-    cols_show = [c for c in cols_show if c in df_res.columns]
-
-    # Top 10 sur-évalués
-    print(f"\nTop 10 joueurs les plus SUR-évalués vs xG :")
-    df_sur = df_res[df_res["outlier_type"] == "Sur-évalué"].copy()
-
-    if not df_sur.empty:
-        top_sur = df_sur.sort_values("residual", ascending=False).head(10)
-        # Conversion d'affichage en M€ de manière sécurisée
-        top_sur[target_col] = (top_sur[target_col] / 1e6).round(1)
-        print(top_sur[cols_show].to_string(index=False))
-    else:
-        print(" Aucun joueur détecté comme sur-évalué au seuil défini.")
-
-    # Top 10 sous-évalués
-    print(f"\nTop 10 joueurs les plus SOUS-évalués vs xG :")
-    df_sous = df_res[df_res["outlier_type"] == "Sous-évalué"].copy()
-
-    if not df_sous.empty:
-        top_sous = df_sous.sort_values("residual", ascending=True).head(10)
-        # Conversion d'affichage en M€ de manière sécurisée
-        top_sous[target_col] = (top_sous[target_col] / 1e6).round(1)
-        print(top_sous[cols_show].to_string(index=False))
-    else:
-        print(" Aucun joueur détecté comme sous-évalué au seuil défini.")
-
-
-
-
-
-
-def verifier_coherence_age_naissance(df):
-    """Calcule l'âge théorique d'un joueur à partir de sa saison et de son année de naissance,
-
-    puis valide la cohérence avec la colonne 'age' pour détecter d'éventuelles anomalies.
-    """
-    print("Contrôle de qualité et cohérence des données")
-
-    # Vérification des colonnes requises
-    colonnes_requises = ["season", "season_label", "born", "age"]
-    manquantes = [c for c in colonnes_requises if c not in df.columns]
-    
-    if manquantes:
-        print(f"Annulé : Colonnes sources manquantes dans le DataFrame : {', '.join(manquantes)}")
-        return
-
-    # Copie de travail locale pour ne pas polluer le DataFrame principal
-    df_check = df[colonnes_requises].copy()
-
-    # Nettoyage et conversion des types de base
-    df_check["born"] = pd.to_numeric(df_check["born"], errors="coerce")
-    df_check["age"] = pd.to_numeric(df_check["age"], errors="coerce")
-
-    # Calcul de l'année de début de saison (Méthode 1 : depuis 'season')
-    def extraire_annee_saison(x):
-        x_str = str(x).strip()
-        if len(x_str) == 4 and not x_str.startswith("20"):
-            try:
-                return int(x_str[:2]) + 2000
-            except ValueError:
-                return None
-        else:
-            try:
-                return int(x_str[:4])
-            except ValueError:
-                return None
-
-    df_check["season_start"] = df_check["season"].apply(extraire_annee_saison)
-
-    # Calcul de l'année de début de saison (Méthode 2 : depuis 'season_label')
-    # ex: "2022-2023" -> 2022.0
-    df_check["season_start2"] = pd.to_numeric(df_check["season_label"].str[:4], errors="coerce")
-
-    # Calcul de l'écart de cohérence
-    df_check["age_calc"] = df_check["season_start2"] - df_check["born"]
-    df_check["age_diff"] = (df_check["age_calc"] - df_check["age"]).abs()
-
-    # Suppression des lignes où le calcul n'a pas pu aboutir (NaN)
-    valid_diffs = df_check["age_diff"].dropna()
-    total_valides = len(valid_diffs)
-    total_df = len(df)
-
-    # Affichage du rapport textuel
-    print(f"\nCohérence born/age/season ({total_valides}/{total_df} lignes analysables) :")
-    
-    if total_valides > 0:
-        print(f"  Différence nulle (exacte)      : {(valid_diffs == 0).sum():,}")
-        print(f"  Différence ≤ 1 an              : {(valid_diffs <= 1).sum():,}")
-        print(f"  Différence > 1 an (anomalie)   : {(valid_diffs > 1).sum():,}")
-        print(f"  Différence > 5 ans             : {(valid_diffs > 5).sum():,}")
-        
-        # Alerte bonus si des anomalies graves sont détectées
-        nb_anomalies_graves = (valid_diffs > 5).sum()
-        if nb_anomalies_graves > 0:
-            print(f"\n[ATTENTION] {nb_anomalies_graves} lignes présentent un écart critique (> 5 ans).")
-            print("Vérifiez s'il n'y a pas un décalage de ligne ou un problème d'encodage sur ces profils.")
-    else:
-        print("  Aucune donnée exploitable (les conversions numériques ont toutes échoué).")
-
-
-
-
 
 
 def verifier_coherence_jours_blessures(df):
@@ -1651,9 +1025,6 @@ def verifier_coherence_jours_blessures(df):
         print("  Aucune donnée comparable disponible (valeurs manquantes ou non numériques).")
 
 
-
-
-
 def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", dossier_sauvegarde=None, couleurs_dict=None):
     """Calcule l'évolution de la valeur marchande (médiane et moyenne) ainsi que le volume de joueurs
 
@@ -1662,8 +1033,8 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
     print(f"Analyse de l'évolution temporelle par Saison (cible : {target_col})")
 
     # Vérifications initiales des colonnes
-    if "season_label" not in df.columns:
-        print("Annulé : La colonne 'season_label' est absente du DataFrame.")
+    if "season_year" not in df.columns:
+        print("Annulé : La colonne 'season_year' est absente du DataFrame.")
         return
     if target_col not in df.columns:
         print(f"Annulé : La colonne cible '{target_col}' est absente.")
@@ -1681,7 +1052,7 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
         print("Annulé : Aucune donnée valide après suppression des valeurs manquantes sur la cible.")
         return
 
-    vm_season = df_clean.groupby("season_label")[target_col].agg(
+    vm_season = df_clean.groupby("season_year")[target_col].agg(
         mediane="median", 
         moyenne="mean", 
         count="count"
@@ -1757,3 +1128,305 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
     
     # Optionnel : Retourne le tableau croisé récapitulatif
     return vm_season
+
+
+def analyser_cycle_vie_financier(df):
+    """Nettoie les postes des joueurs, filtre les catégories majeures,
+
+    et génère le graphique bi-axe du cycle de vie financier selon l'âge.
+    """
+    print("Démarrage de l'analyse du cycle de vie financier...")
+
+    # Copie locale pour éviter de modifier le DataFrame original en place
+    df_clean = df.copy()
+
+    # Vérification des colonnes requises
+    cols_requises = ["age", "market_value_in_eur", "position"]
+    manquantes = [c for c in cols_requises if c not in df_clean.columns]
+    if manquantes:
+        print(f"Annulé : Les colonnes suivantes sont absentes : {manquantes}")
+        return df_clean
+
+    # Harmonisation des postes (anglais / français / abréviations)
+    mapping_postes = {
+        "FW": "Attack",
+        "MF": "Midfield",
+        "DF": "Defender",
+        "GK": "Goalkeeper",
+        "Attaquant": "Attack",
+        "Milieu": "Midfield",
+        "Défenseur": "Defender",
+        "Gardien": "Goalkeeper",
+    }
+    df_clean["position"] = (
+        df_clean["position"].map(mapping_postes).fillna(df_clean["position"])
+    )
+
+    # Filtrage strict sur les 4 catégories majeures
+    postes_valides = ["Attack", "Midfield", "Defender", "Goalkeeper"]
+    df_clean = df_clean[df_clean["position"].isin(postes_valides)]
+
+    print(
+        f"{len(df_clean)} observations valides trouvées pour l'analyse graphique."
+    )
+
+    # Agrégation des données par âge
+    age_profile = (
+        df_clean.groupby("age")["market_value_in_eur"]
+        .agg(["median", "count"])
+        .reset_index()
+    )
+
+    # Sécurité : On retire les âges extrêmes non représentatifs (moins de 10 joueurs)
+    age_profile = age_profile[age_profile["count"] >= 10]
+
+    if age_profile.empty:
+        print(
+            "Annulé : Pas assez de volume de données après filtrage des âges pour générer le graphique."
+        )
+        return df_clean
+
+    # Génération du graphique bi-axe (Seaborn / Matplotlib)
+    sns.set_theme(style="whitegrid")
+    fig, ax1 = plt.subplots(figsize=(11, 5))
+
+    # Axe principal : Courbe de la Valeur Marchande Médiane (convertie en M€)
+    sns.lineplot(
+        data=age_profile,
+        x="age",
+        y=age_profile["median"] / 1e6,
+        marker="o",
+        linewidth=3,
+        color="#1f77b4",
+        ax=ax1,
+        label="Valeur Marchande Médiane",
+    )
+    ax1.set_ylabel("Valeur Médiane (M€)", color="#1f77b4", fontsize=12)
+    ax1.set_xlabel("Âge au moment de la saison", fontsize=12)
+
+    # Axe secondaire : Volume de données (Histogramme lissé en arrière-plan)
+    ax2 = ax1.twinx()
+    ax2.fill_between(
+        age_profile["age"],
+        age_profile["count"],
+        alpha=0.1,
+        color="gray",
+        step="mid",
+        label="Nombre d'observations",
+    )
+    ax2.set_ylabel("Volume de données", color="gray", fontsize=12)
+    ax2.grid(False)
+
+    # Détection dynamique et traçage de la ligne du pic financier
+    age_or = age_profile.loc[age_profile["median"].idxmax(), "age"]
+    ax1.axvline(
+        x=age_or,
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Pic de valeur moyen ({int(age_or)} ans)",
+    )
+
+    # Titre général
+    ax1.set_title(
+        "Cycle de vie financier d'un joueur", fontsize=14, fontweight="bold"
+    )
+
+    # Fusion propre des légendes des deux axes distincts
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
+
+    plt.tight_layout()
+    plt.show()
+
+    print()
+    print("Graphique généré avec succès.")
+
+    # On retourne le DataFrame nettoyé au cas où tu en as besoin pour la suite
+    return df_clean
+
+
+def analyser_distribution_prix_ligue_poste(df):
+    """Reconstitue la colonne ligue à partir du One-Hot, trie les championnats
+
+    par valeur marchande médiane décroissante et affiche le Boxplot global.
+    """
+    print("Démarrage de l'analyse de distribution des prix...")
+
+    # Identification dynamique des colonnes One-Hot de ligues
+    cols_league = [c for c in df.columns if c.startswith("league_")]
+
+    if not cols_league:
+        print("Annulé : Aucune colonne de type 'league_' trouvée dans le DataFrame.")
+        return
+
+    if "market_value_in_eur" not in df.columns or "position" not in df.columns:
+        print("Annulé : La colonne 'market_value_in_eur' ou 'position' est absente.")
+        return
+
+    # Création d'un DataFrame temporaire de travail pour le plot
+    df_plot = df.copy()
+
+    # Reconstitution de la colonne 'league' textuelle à partir du One-Hot
+    df_plot["league"] = (
+        df_plot[cols_league].idxmax(axis=1).str.replace("league_", "")
+    )
+
+    # Tri des championnats par valeur marchande médiane décroissante
+    league_order = (
+        df_plot.groupby("league")["market_value_in_eur"]
+        .median()
+        .sort_values(ascending=False)
+        .index
+    )
+
+    print(f"{len(league_order)} championnats détectés et ordonnés pour l'affichage.")
+
+    # Configuration graphique et génération du Boxplot
+    sns.set_theme(style="whitegrid")
+    plt.figure(figsize=(14, 6))
+
+    sns.boxplot(
+        data=df_plot,
+        x="league",
+        y="market_value_in_eur",
+        hue="position",
+        hue_order=["Attack", "Midfield", "Defender", "Goalkeeper"],
+        order=league_order,
+        palette="Set2",
+    )
+
+    # Échelle logarithmique indispensable pour écraser la dispersion des prix
+    plt.yscale("log")
+
+    plt.title(
+        "Distribution des prix par Championnat et Poste (4 Catégories Majeures)",
+        fontsize=14,
+        fontweight="bold",
+    )
+    plt.xlabel("Championnat")
+    plt.ylabel("Valeur Marchande (EUR - Échelle Log)")
+    plt.xticks(rotation=30, ha="right")
+
+    # Placement propre de la légende à l'extérieur pour éviter l'enchevêtrement
+    plt.legend(
+        title="Poste Nettoyé", bbox_to_anchor=(1.05, 1), loc="upper left"
+    )
+    
+    plt.tight_layout()
+    plt.show()
+
+    print()
+    print("Boxplot généré avec succès.")
+
+
+def detecter_top_colinearites(df, top_n=15):
+    """Calcule la matrice de corrélation et extrait les paires de variables
+
+    présentant les plus fortes colinéarités (en valeur absolue).
+    """
+    print(f"Extraction du Top {top_n} des colinéarités les plus fortes...")
+
+    # Sélection uniquement des variables numériques (continues et binaires)
+    df_num = df.select_dtypes(include=[np.number]).copy()
+    
+    # Sécurité : On supprime les colonnes qui n'ont aucune variabilité (écart-type nul)
+    df_num = df_num.loc[:, df_num.std() > 0]
+
+    # Calcul de la matrice de corrélation
+    corr_matrix = df_num.corr(method="pearson")
+
+    # On ne garde que le triangle supérieur de la matrice pour éviter les doublons (A vs B et B vs A)
+    # et on exclut la diagonale (corrélation de 1 d'une variable avec elle-même)
+    upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+
+    # On "aplatit" (unstack) la matrice pour passer d'un tableau 2D à une liste de paires
+    corr_pairs = upper_tri.unstack().dropna()
+
+    # Création d'un DataFrame propre pour le tri
+    df_colin = pd.DataFrame(corr_pairs).reset_index()
+    df_colin.columns = ["Variable_A", "Variable_B", "Correlation"]
+
+    # Ajout de la valeur absolue pour capturer les fortes corrélations négatives
+    df_colin["Abs_Correlation"] = df_colin["Correlation"].abs()
+
+    # Tri par corrélation absolue décroissante et sélection du Top N
+    top_colin = df_colin.sort_values(by="Abs_Correlation", ascending=False).head(top_n)
+    
+    # Nettoyage de l'affichage
+    top_colin = top_colin.drop(columns=["Abs_Correlation"]).reset_index(drop=True)
+    
+    # Formatage pour un affichage élégant des coefficients
+    top_colin["Correlation"] = top_colin["Correlation"].round(3)
+
+    return top_colin
+
+
+def analyser_variables_les_plus_explicatives(df, target_col="market_value_in_eur", top_n=15):
+    """Calcule et affiche les variables les plus corrélées à la cible,
+
+    en brut et en version log, pour identifier le top des variables explicatives.
+    """
+    print(f"Analyse des variables les plus explicatives pour : {target_col}")
+
+    # Vérification de la présence de la cible
+    if target_col not in df.columns:
+        print(f"Erreur : La colonne cible '{target_col}' est absente.")
+        return
+
+    # Sélection des variables numériques
+    df_num = df.select_dtypes(include=[np.number]).copy()
+    
+    # Sécurité : On supprime les colonnes avec un écart-type nul
+    df_num = df_num.loc[:, df_num.std() > 0]
+
+    # Création de la cible au format Log pour capter les relations non-linéaires
+    target_log_col = f"{target_col}_log"
+    df_num[target_log_col] = np.log1p(df_num[target_col])
+
+    # Calcul des corrélations de toutes les variables avec la cible brute et log
+    corr_brute = df_num.corr(method="pearson")[target_col]
+    corr_log = df_num.corr(method="pearson")[target_log_col]
+
+    # Construction du tableau des résultats
+    df_importance = pd.DataFrame({
+        "Variable": corr_brute.index,
+        "Corr_Cible_Brute": corr_brute.values,
+        "Corr_Cible_Log": corr_log.values
+    })
+
+    # On exclut la cible elle-même et ses variantes directes de la liste des variables explicatives
+    exclusions = [target_col, target_log_col, f"{target_col}_nor"]
+    df_importance = df_importance[~df_importance["Variable"].isin(exclusions)].copy()
+
+    # On exclut également les doublons normalisés (_nor) pour ne pas polluer le Top 15
+    df_importance = df_importance[~df_importance["Variable"].str.endswith("_nor")].copy()
+
+    # On trie par la corrélation absolue la plus forte (brute ou log)
+    df_importance["Max_Abs_Corr"] = df_importance[["Corr_Cible_Brute", "Corr_Cible_Log"]].abs().max(axis=1)
+    top_explicatives = df_importance.sort_values(by="Max_Abs_Corr", ascending=False).head(top_n).reset_index(drop=True)
+
+    # Nettoyage cosmétique du tableau final
+    top_explicatives["Corr_Cible_Brute"] = top_explicatives["Corr_Cible_Brute"].round(3)
+    top_explicatives["Corr_Cible_Log"] = top_explicatives["Corr_Cible_Log"].round(3)
+    tableau_affichage = top_explicatives.drop(columns=["Max_Abs_Corr"])
+
+    plt.figure(figsize=(10, 6))
+    # On affiche graphiquement la corrélation avec la version Log qui est souvent la plus parlante
+    sns.barplot(
+        data=top_explicatives,
+        y="Variable",
+        x="Corr_Cible_Log",
+        palette="Blues_r" if top_explicatives["Corr_Cible_Log"].mean() >= 0 else "Reds",
+        hue="Variable",
+        legend=False
+    )
+    plt.axvline(0, color="black", linestyle="-", linewidth=0.8)
+    plt.title(f"Top {top_n} des variables les plus explicatives (Corrélation avec log(VM))", fontsize=13, fontweight="bold")
+    plt.xlabel("Coefficient de corrélation de Pearson (r)")
+    plt.ylabel("Variables")
+    plt.tight_layout()
+    plt.show()
+
+    return tableau_affichage
