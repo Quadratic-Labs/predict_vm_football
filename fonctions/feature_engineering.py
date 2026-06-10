@@ -41,9 +41,9 @@ def generer_feature_engineering_football(df):
             0,
         )
 
-    # Indice de menace aérienne (Taille * Efficacité des arrêts pour GK)
+    # Indice de menace de gardien (Taille * Efficacité des arrêts pour GK)
     if "Performance_Save%" in df_fe.columns and "height_in_cm" in df_fe.columns:
-        df_fe["menace_aerienne"] = (
+        df_fe["menace_gardien"] = (
             df_fe["Performance_Save%"] / 100.0
         ) * df_fe["height_in_cm"]
 
