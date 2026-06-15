@@ -188,7 +188,7 @@ def aggregate_injuries_by_season(df_blessures):
     # Liste complète de toutes les familles pour la suite de l'algorithme
     toutes_familles = list(familles_specifiques.keys()) + ["minor_unknown"]
 
-    # ÉTAPE 4 : Configuration de l'agrégation finale
+    # Étape 4 : Configuration de l'agrégation finale
     agg_dict = {
         "Blessure": "count",
         "Jours_num": "sum",
@@ -247,12 +247,16 @@ def aggregate_injuries_by_season(df_blessures):
         )
 
     # Étape 6 : Réorganisation esthétique des colonnes
+    colonnes_sans_count = [
+        col for col in df_grouped.columns if not col.endswith("_count")
+    ]
+
     colonnes_finales = (
         ["player_id", "Saison"]
         + colonnes_de_base_a_garder
         + [
             col
-            for col in df_grouped.columns
+            for col in colonnes_sans_count
             if col not in ["player_id", "Saison"] + colonnes_de_base_a_garder
         ]
     )
