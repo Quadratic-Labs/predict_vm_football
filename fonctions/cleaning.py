@@ -336,6 +336,34 @@ def fusionner_et_recalculer_mercato(df):
     return df_fusion_mercato
 
 
+import pandas as pd
+
+
+def supprimer_colonnes_du_dataset(df, colonnes_a_supprimer):
+    """Supprime une liste de colonnes spécifiée d'un DataFrame de manière sécurisée.
+
+    param df: Le DataFrame d'origine.
+    param colonnes_a_supprimer: Liste de chaînes de caractères (noms des
+    colonnes).
+    return: Un nouveau DataFrame nettoyé.
+    """
+    # On filtre la liste pour ne garder que les colonnes qui existent vraiment dans le DF
+    # (Évite que le code ne plante si tu lances la cellule deux fois d'affilée)
+    colonnes_existantes = [c for c in colonnes_a_supprimer if c in df.columns]
+
+    # Suppression
+    if colonnes_existantes:
+        df_nettoye = df.drop(columns=colonnes_existantes)
+        print(
+            f"{len(colonnes_existantes)} colonne(s) supprimée(s) : {colonnes_existantes}"
+        )
+    else:
+        df_nettoye = df.copy()
+        print("Aucune des colonnes spécifiées n'a été trouvée dans le dataset.")
+
+    return df_nettoye
+
+
 def diagnostiquer_valeurs_manquantes(df, seuil=0.30):
     """Analyse, affiche et retourne les colonnes dont le taux de valeurs manquantes
 
