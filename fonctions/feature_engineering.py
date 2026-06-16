@@ -50,7 +50,7 @@ def generer_feature_engineering_football(df):
     # Ratio de Danger Converti (Efficacité devant le but : Buts réels / xG attendus)
     if "Performance_Gls" in df_fe.columns and "xg" in df_fe.columns:
         df_fe["efficacite_devant_but"] = np.where(
-            df_fe["xg"] > 0,
+            df_fe["xg"] > 1,
             df_fe["Performance_Gls"] / df_fe["xg"],
             1.0,  # Valeur neutre de 1 si pas d'xg
         )
