@@ -768,12 +768,6 @@ def calculer_jours_contrat_restants(df):
     return df_clean
 
 
-import os
-import pickle
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-
-
 def executer_pipeline_preprocessing(
     df,
     dossier_sortie,
