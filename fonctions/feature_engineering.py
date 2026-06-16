@@ -43,7 +43,7 @@ def generer_feature_engineering_football(df):
 
     # Indice de menace de gardien (Taille * Efficacité des arrêts pour GK)
     if "Performance_Save%" in df_fe.columns and "height_in_cm" in df_fe.columns:
-        df_fe["menace_gardien"] = (
+        df_fe["taux_arretXtaille_gardien"] = (
             df_fe["Performance_Save%"] / 100.0
         ) * df_fe["height_in_cm"]
 
@@ -120,7 +120,7 @@ def generer_feature_engineering_football(df):
         )
 
         # Calcul du ratio d'implication
-        df_fe["poids_offensif_equipe"] = np.where(
+        df_fe["contribution_offensive_equipe"] = np.where(
             df_fe["total_buts_equipe"] > 0,
             (df_fe["Performance_Gls"] + df_fe["Performance_Ast"])
             / df_fe["total_buts_equipe"],
@@ -130,7 +130,7 @@ def generer_feature_engineering_football(df):
 
     # Taux d'indisponibilité annuel
     if "injury_days_total" in df_fe.columns:
-        df_fe["taux_indisponibilite"] = df_fe["injury_days_total"] / 365.0
+        df_fe["taux_indisponibilite"] = (df_fe["injury_days_total"] / 365.0).clip(upper=1.0)
 
 
     # Score lié à la nation
