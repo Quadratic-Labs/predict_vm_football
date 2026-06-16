@@ -789,51 +789,6 @@ def calculer_jours_contrat_restants(df):
     return df_clean
 
 
-def supprimer_colonnes_inutiles_et_leakage(df):
-    """Supprime les identifiants techniques, les doublons d'information
-
-    et les variables de fuite de données (Data Leakage) avant la modélisation.
-    """
-    print("Début du nettoyage des colonnes avant modélisation...")
-
-    # Copie locale pour éviter les warnings
-    df_clean = df.copy()
-
-    # Dictionnaire explicatif des suppressions
-    categories_suppression = {
-        "Identifiants techniques": [
-            "join_key", "tm_join_key", "tm_join_key_full", "tm_id",
-            "player_id", "dob_key", "tm_dob_key", "match_method"
-        ],
-        "Doublons d'information": [
-            "name", "date_of_birth", "dob_year", "date", "season"
-        ],
-        "Fuites de données (Data Leakage)": [
-            "valuation_season_year", "contract_expiration_date"
-        ],
-    }
-
-    total_supprimees = 0
-
-    # Analyse et suppression par catégorie pour un affichage propre
-    for categorie, colonnes in categories_suppression.items():
-        # On ne garde que les colonnes qui existent réellement dans le DataFrame
-        cols_presentes = [c for c in colonnes if c in df_clean.columns]
-        
-        if cols_presentes:
-            df_clean.drop(columns=cols_presentes, inplace=True)
-            print(f"{categorie:35s} : {len(cols_presentes):2d} colonnes supprimées ({', '.join(cols_presentes)})")
-            total_supprimees += len(cols_presentes)
-        else:
-            print(f"{categorie:35s} : 0 colonne supprimée")
-
-    print()
-    print(f"Nettoyage terminé. Total de colonnes supprimées : {total_supprimees}")
-    print(f"Dimensions actuelles du DataFrame : {df_clean.shape}")
-
-    return df_clean
-
-
 def normaliser_variables_continues(df):
     """Identifie les variables continues (non binaires, non encodées) et crée
 

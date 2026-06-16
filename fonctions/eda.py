@@ -1375,70 +1375,503 @@ def detecter_top_colinearites(df, top_n=15):
     return top_colin
 
 
-def analyser_variables_les_plus_explicatives(df, target_col="market_value_in_eur", top_n=15):
-    """Calcule et affiche les variables les plus corrélées à la cible,
+def analyser_variables_les_plus_explicatives(
+    df, target_col="market_value_in_eur", top_n=15
+):
+    """Calcule et affiche les variables les plus corrélées à la cible en brut
 
-    en brut et en version log, pour identifier le top des variables explicatives.
+    (sans Log), en les regroupant par famille avec une palette de couleurs professionnelle.
     """
     print(f"Analyse des variables les plus explicatives pour : {target_col}")
 
-    # Vérification de la présence de la cible
     if target_col not in df.columns:
         print(f"Erreur : La colonne cible '{target_col}' est absente.")
         return
 
-    # Sélection des variables numériques
+    # Dictionnaire métier
+    dict_metier = {
+        # Famille : Identité, âge et physique
+        "player": ("Nom du joueur", "Identité et physique"),
+        "team": ("Club du joueur", "Identité et physique"),
+        "nation": ("Nationalité", "Identité et physique"),
+        "age": ("Âge du joueur", "Identité et physique"),
+        "height_in_cm": ("Taille (en cm)", "Identité et physique"),
+        "position": ("Poste général", "Identité et physique"),
+        "foot_both": ("Ambidextre (0/1)", "Identité et physique"),
+        "foot_left": ("Gaucher (0/1)", "Identité et physique"),
+        "foot_right": ("Droitier (0/1)", "Identité et physique"),
+        # Famille : Postes et sub-positions
+        "pos_DF": ("Défenseur (0/1)", "Postes"),
+        "pos_FW": ("Attaquant (0/1)", "Postes"),
+        "pos_GK": ("Gardien de but (0/1)", "Postes"),
+        "pos_MF": ("Milieu de terrain (0/1)", "Postes"),
+        "sub_position_Attacking Midfield": (
+            "Milieu offensif (0/1)",
+            "Postes",
+        ),
+        "sub_position_Central Midfield": (
+            "Milieu central (0/1)",
+            "Postes",
+        ),
+        "sub_position_Centre-Back": (
+            "Défenseur central (0/1)",
+            "Postes",
+        ),
+        "sub_position_Centre-Forward": (
+            "Avant-centre (0/1)",
+            "Postes",
+        ),
+        "sub_position_Defensive Midfield": (
+            "Milieu défensif (0/1)",
+            "Postes",
+        ),
+        "sub_position_Goalkeeper": (
+            "Gardien (Sous-poste 0/1)",
+            "Postes",
+        ),
+        "sub_position_Left Midfield": (
+            "Milieu gauche (0/1)",
+            "Postes",
+        ),
+        "sub_position_Left Winger": (
+            "Ailier gauche (0/1)",
+            "Postes",
+        ),
+        "sub_position_Left-Back": (
+            "Latéral gauche (0/1)",
+            "Postes",
+        ),
+        "sub_position_Right Midfield": (
+            "Milieu droit (0/1)",
+            "Postes",
+        ),
+        "sub_position_Right Winger": (
+            "Ailier droit (0/1)",
+            "Postes",
+        ),
+        "sub_position_Right-Back": (
+            "Latéral droit (0/1)",
+            "Postes",
+        ),
+        "sub_position_Second Striker": (
+            "Neuf et demi / Second attaquant (0/1)",
+            "Postes",
+        ),
+        # Famille : Championnats et contexte international
+        "league_ENG-Premier League": (
+            "Évolue en Premier League (0/1)",
+            "Ligues et contexte international",
+        ),
+        "league_ESP-La Liga": (
+            "Évolue en La Liga (0/1)",
+            "Ligues et contexte international",
+        ),
+        "league_FRA-Ligue 1": (
+            "Évolue en Ligue 1 (0/1)",
+            "Ligues et contexte international",
+        ),
+        "league_GER-Bundesliga": (
+            "Évolue en Bundesliga (0/1)",
+            "Ligues et contexte international",
+        ),
+        "league_ITA-Serie A": (
+            "Évolue en Serie A (0/1)",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_1": (
+            "Sélection nationale Rang FIFA 1-10",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_2": (
+            "Sélection nationale Rang FIFA 11-20",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_3": (
+            "Sélection nationale Rang FIFA 21-30",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_4": (
+            "Sélection nationale Rang FIFA 31-40",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_5": (
+            "Sélection nationale Rang FIFA 41-50",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_6": (
+            "Sélection nationale Rang FIFA 51-60",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_7": (
+            "Sélection nationale Rang FIFA 61-70",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_8": (
+            "Sélection nationale Rang FIFA 71-80",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_9": (
+            "Sélection nationale Rang FIFA 81-90",
+            "Ligues et contexte international",
+        ),
+        "classement_FIFA_10": (
+            "Sélection nationale Rang FIFA 91+",
+            "Ligues et contexte international",
+        ),
+        # Famille : Temps de jeu, contrat et chronologie
+        "season_year": ("Année de la saison", "Temps de jeu & Contrat"),
+        "contrat_jours_restants": (
+            "Jours de contrat restants",
+            "Temps de jeu et contrat",
+        ),
+        "Playing Time_MP": ("Matchs disputés (MP)", "Temps de jeu et contrat"),
+        "Playing Time_Starts": (
+            "Titularisations (Starts)",
+            "Temps de jeu et contrat",
+        ),
+        "Playing Time_90s": (
+            "Nombre de 90 minutes complétées",
+            "Temps de jeu et contrat",
+        ),
+        "Playing Time_Mn/MP": (
+            "Minutes jouées par match disputé",
+            "Temps de jeu et contrat",
+        ),
+        "Starts_Mn/Start": (
+            "Minutes par titularisation",
+            "Temps de jeu et contrat",
+        ),
+        "Starts_Compl": (
+            "Matchs commencés et terminés en entier",
+            "Temps de jeu et contrat",
+        ),
+        "Subs_Subs": (
+            "Entrées en cours de match (Remplaçant)",
+            "Temps de jeu et contrat",
+        ),
+        "Subs_Mn/Sub": ("Minutes par entrée en jeu", "Temps de jeu et contrat"),
+        "Subs_unSub": (
+            "Matchs passés sur le banc sans entrer",
+            "Temps de jeu et contrat",
+        ),
+        # Famille : Performance Offensive (Volume et efficacité)
+        "Performance_Gls": ("Buts marqués", "Performance offensive"),
+        "Performance_Ast": ("Passes décisives", "Performance offensive"),
+        "Performance_G-PK": ("Buts hors pénaltys", "Performance offensive"),
+        "Performance_PK": ("Pénaltys marqués", "Performance offensive"),
+        "Performance_PKatt": ("Pénaltys tentés", "Performance offensive"),
+        "Standard_Sh": ("Tirs totaux effectués", "Performance offensive"),
+        "Standard_SoT": ("Tirs cadrés", "Performance offensive"),
+        "Standard_SoT%": (
+            "Pourcentage de tirs cadrés",
+            "Performance offensive",
+        ),
+        "Standard_Sh/90": (
+            "Tirs effectués par 90 min",
+            "Performance offensive",
+        ),
+        "Standard_SoT/90": ("Tirs cadrés par 90 min", "Performance offensive"),
+        "Standard_G/Sh": ("Buts par tir tenté", "Performance offensive"),
+        "Standard_G/SoT": ("Buts par tir cadré", "Performance offensive"),
+        "Performance_Off": ("Hors-jeux signalés", "Performance offensive"),
+        "Performance_Crs": ("Centres vers la surface", "Performance offensive"),
+        "Performance_PKwon": ("Pénaltys obtenus", "Performance offensive"),
+        "Per 90 Minutes_Gls": ("Buts par 90 min", "Performance offensive"),
+        "Per 90 Minutes_Ast": (
+            "Passes décisives par 90 min",
+            "Performance offensive",
+        ),
+        "Per 90 Minutes_G+A": (
+            "Buts + Assists par 90 min",
+            "Performance offensive",
+        ),
+        # Famille : Statistiques avancées (xG, xA, Création)
+        "xg": ("Expected Goals (xG)", "Statistiques avancées"),
+        "xa": ("Expected Assists (xa)", "Statistiques avancées"),
+        "xg_chain": (
+            "Chaîne Expected Goals (xG Chain)",
+            "Statistiques avancées",
+        ),
+        "xg_buildup": (
+            "Construction Expected Goals (xG Buildup)",
+            "Statistiques avancées",
+        ),
+        # Famille : Discipline et performance défensive ---
+        "Performance_CrdY": ("Cartons jaunes reçus", "Discipline et défense"),
+        "Performance_CrdR": ("Cartons rouges reçus", "Discipline et défense"),
+        "Performance_2CrdY": (
+            "Expulsions suite à 2 jaunes",
+            "Discipline et défense",
+        ),
+        "Performance_Fls": ("Fautes commises", "Discipline et défense"),
+        "Performance_Fld": ("Fautes subies", "Discipline et défense"),
+        "Performance_Int": ("Interceptions de passes", "Discipline et défense"),
+        "Performance_TklW": ("Tacles réussis", "Discipline et défense"),
+        "Performance_PKcon": ("Pénaltys concédés", "Discipline et défense"),
+        "Performance_OG": (
+            "Buts contre son camp (OG)",
+            "Discipline et défense",
+        ),
+        # Famille : Collectif et succès équipe
+        "Team Success_PPM": (
+            "Points par match glanés par l'équipe",
+            "Succès équipe et collectif",
+        ),
+        "Team Success_onG": (
+            "Buts marqués par l'équipe (si présent)",
+            "Succès équipe et collectif",
+        ),
+        "Team Success_onGA": (
+            "Buts encaissés par l'équipe (si présent)",
+            "Succès équipe et collectif",
+        ),
+        "Team Success_On-Off": (
+            "Impact On-Off de la présence du joueur",
+            "Succès équipe et collectif",
+        ),
+        # Famille : Spécifique Gardien de but
+        "Performance_GA": ("Buts encaissés (GK)", "Spécifique Gardien"),
+        "Performance_GA90": (
+            "Buts encaissés par 90 min (GK)",
+            "Spécifique gardien",
+        ),
+        "Performance_Saves": ("Arrêts effectués", "Spécifique Gardien"),
+        "Performance_Save%": ("Pourcentage d'arrêts", "Spécifique Gardien"),
+        "Performance_W": (
+            "Victoires de l'équipe (si présent)",
+            "Spécifique gardien",
+        ),
+        "Performance_D": (
+            "Matchs nuls de l'équipe (si présent)",
+            "Spécifique gardien",
+        ),
+        "Performance_L": (
+            "Défaites de l'équipe (si présent)",
+            "Spécifique gardien",
+        ),
+        "Performance_CS": (
+            "Clean Sheets (Matchs sans but)",
+            "Spécifique gardien",
+        ),
+        "Performance_CS%": (
+            "Pourcentage de Clean Sheets",
+            "Spécifique gardien",
+        ),
+        "Penalty Kicks_PKA": ("Pénaltys encaissés (GK)", "Spécifique gardien"),
+        "Penalty Kicks_PKsv": ("Pénaltys arrêtés (GK)", "Spécifique gardien"),
+        "Penalty Kicks_PKm": (
+            "Pénaltys ratés par l'adversaire",
+            "Spécifique gardien",
+        ),
+        "Penalty Kicks_Save%": (
+            "Pourcentage de pénaltys arrêtés",
+            "Spécifique gardien",
+        ),
+        # Famille : Historique médical (Blessures)
+        "injury_nb_total": ("Nombre total de blessures", "Historique Médical"),
+        "injury_days_total": (
+            "Total des jours d'absence",
+            "Historique médical",
+        ),
+        "injury_matches_max_single": (
+            "Max de matchs manqués sur une blessure",
+            "Historique médical",
+        ),
+        "injury_musculaire": (
+            "Blessure musculaire (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_musculaire_nb_d": (
+            "Jours d'absence - Muscle",
+            "Historique médical",
+        ),
+        "injury_musculaire_nb_m": (
+            "Matchs manqués - Muscle",
+            "Historique médical",
+        ),
+        "injury_genou": (
+            "Blessure au genou (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_genou_nb_d": ("Jours d'absence - Genou", "Historique médical"),
+        "injury_genou_nb_m": ("Matchs manqués - Genou", "Historique médical"),
+        "injury_cheville_pied": (
+            "Blessure cheville/pied (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_cheville_pied_nb_d": (
+            "Jours d'absence - Cheville/Pied",
+            "Historique médical",
+        ),
+        "injury_cheville_pied_nb_m": (
+            "Matchs manqués - Cheville/Pied",
+            "Historique médical",
+        ),
+        "injury_mollet_tibia": (
+            "Blessure mollet/tibia (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_mollet_tibia_nb_d": (
+            "Jours d'absence - Mollet/Tibia",
+            "Historique médical",
+        ),
+        "injury_mollet_tibia_nb_m": (
+            "Matchs manqués - Mollet/Tibia",
+            "Historique médical",
+        ),
+        "injury_dos_bassin": (
+            "Blessure dos/bassin (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_dos_bassin_nb_d": (
+            "Jours d'absence - Dos/Bassin",
+            "Historique médical",
+        ),
+        "injury_dos_bassin_nb_m": (
+            "Matchs manqués - Dos/Bassin",
+            "Historique médical",
+        ),
+        "injury_trauma_severe": (
+            "Traumatisme sévère/Opération (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_trauma_severe_nb_d": (
+            "Jours d'absence - Traumatisme Sévère",
+            "Historique médical",
+        ),
+        "injury_trauma_severe_nb_m": (
+            "Matchs manqués - Traumatisme Sévère",
+            "Historique médical",
+        ),
+        "injury_medical_repos": (
+            "Maladie / Repos obligatoire (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_medical_repos_nb_d": (
+            "Jours d'absence - Maladie/Repos",
+            "Historique médical",
+        ),
+        "injury_medical_repos_nb_m": (
+            "Matchs manqués - Maladie/Repos",
+            "Historique médical",
+        ),
+        "injury_minor_unknown": (
+            "Blessure mineure/inconnue (Présence 0/1)",
+            "Historique médical",
+        ),
+        "injury_minor_unknown_nb_d": (
+            "Jours d'absence - Blessure mineure",
+            "Historique médical",
+        ),
+        "injury_minor_unknown_nb_m": (
+            "Matchs manqués - Blessure mineure",
+            "Historique médical",
+        ),
+    }
+
+    # Sélection et traitement numérique
     df_num = df.select_dtypes(include=[np.number]).copy()
-    
-    # Sécurité : On supprime les colonnes avec un écart-type nul
     df_num = df_num.loc[:, df_num.std() > 0]
 
-    # Création de la cible au format Log pour capter les relations non-linéaires
-    target_log_col = f"{target_col}_log"
-    df_num[target_log_col] = np.log1p(df_num[target_col])
-
-    # Calcul des corrélations de toutes les variables avec la cible brute et log
+    # Calcul des corrélations de Pearson uniquement sur la cible brute (sans log)
     corr_brute = df_num.corr(method="pearson")[target_col]
-    corr_log = df_num.corr(method="pearson")[target_log_col]
 
-    # Construction du tableau des résultats
-    df_importance = pd.DataFrame({
-        "Variable": corr_brute.index,
-        "Corr_Cible_Brute": corr_brute.values,
-        "Corr_Cible_Log": corr_log.values
-    })
+    df_importance = pd.DataFrame(
+        {"Variable": corr_brute.index, "Corr_Cible_Brute": corr_brute.values}
+    )
 
-    # On exclut la cible elle-même et ses variantes directes de la liste des variables explicatives
-    exclusions = [target_col, target_log_col, f"{target_col}_nor"]
-    df_importance = df_importance[~df_importance["Variable"].isin(exclusions)].copy()
+    # Filtrage de la cible et des variantes normalisées (_nor)
+    exclusions = [target_col, f"{target_col}_nor"]
+    df_importance = df_importance[
+        ~df_importance["Variable"].isin(exclusions)
+    ].copy()
+    df_importance = df_importance[
+        ~df_importance["Variable"].str.endswith("_nor")
+    ].copy()
 
-    # On exclut également les doublons normalisés (_nor) pour ne pas polluer le Top 15
-    df_importance = df_importance[~df_importance["Variable"].str.endswith("_nor")].copy()
+    # Tri par la valeur absolue de la corrélation brute
+    df_importance["Abs_Corr"] = df_importance["Corr_Cible_Brute"].abs()
+    top_explicatives = (
+        df_importance.sort_values(by="Abs_Corr", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
 
-    # On trie par la corrélation absolue la plus forte (brute ou log)
-    df_importance["Max_Abs_Corr"] = df_importance[["Corr_Cible_Brute", "Corr_Cible_Log"]].abs().max(axis=1)
-    top_explicatives = df_importance.sort_values(by="Max_Abs_Corr", ascending=False).head(top_n).reset_index(drop=True)
+    # Traduction du texte
+    top_explicatives["Description"] = top_explicatives["Variable"].apply(
+        lambda x: dict_metier.get(x, (x, "Non Classifié"))[0]
+    )
+    top_explicatives["Famille"] = top_explicatives["Variable"].apply(
+        lambda x: dict_metier.get(x, (x, "Non Classifié"))[1]
+    )
 
-    # Nettoyage cosmétique du tableau final
-    top_explicatives["Corr_Cible_Brute"] = top_explicatives["Corr_Cible_Brute"].round(3)
-    top_explicatives["Corr_Cible_Log"] = top_explicatives["Corr_Cible_Log"].round(3)
-    tableau_affichage = top_explicatives.drop(columns=["Max_Abs_Corr"])
+    top_explicatives["Corr_Cible_Brute"] = top_explicatives[
+        "Corr_Cible_Brute"
+    ].round(3)
 
-    plt.figure(figsize=(10, 6))
-    # On affiche graphiquement la corrélation avec la version Log qui est souvent la plus parlante
+    # Colorométrie
+    # Configuration du style graphique de fond
+    sns.set_theme(style="whitegrid", rc={"axes.facecolor": "#fbfbfb"})
+    plt.figure(figsize=(12, 8))
+
+    # Définition d'une palette corporate moderne aux tons mats (style Nord/Muted)
+    palette_pro = {
+        "Identité et physique": "#4c566a",  # Gris ardoise chic
+        "Postes": "#5e81ac",  # Bleu acier
+        "Ligues et contexte international": "#81a1c1",  # Bleu givré
+        "Temps de jeu et contrat": "#8fbcbb",  # Vert d'eau/Sauge mat
+        "Performance offensive": "#d08770",  # Terracotta doux
+        "Statistiques avancées": "#b48ead",  # Vieux mauve discret
+        "Discipline et défense": "#bf616a",  # Rouge brique atténué
+        "Succès équipe et collectif": "#a3be8c",  # Vert olive doux
+        "Spécifique gardien": "#ebcb8b",  # Ocre doux
+        "Historique médical": "#e5e9f0",  # Gris clair
+    }
+
+    # Tracé des barres horizontales
     sns.barplot(
         data=top_explicatives,
-        y="Variable",
-        x="Corr_Cible_Log",
-        palette="Blues_r" if top_explicatives["Corr_Cible_Log"].mean() >= 0 else "Reds",
-        hue="Variable",
-        legend=False
+        y="Description",
+        x="Corr_Cible_Brute",
+        hue="Famille",
+        palette=palette_pro,
+        dodge=False,
+        edgecolor="#2e3440",
+        linewidth=0.6,
     )
-    plt.axvline(0, color="black", linestyle="-", linewidth=0.8)
-    plt.title(f"Top {top_n} des variables les plus explicatives (Corrélation avec log(VM))", fontsize=13, fontweight="bold")
-    plt.xlabel("Coefficient de corrélation de Pearson (r)")
-    plt.ylabel("Variables")
+
+    plt.axvline(0, color="#2e3440", linestyle="-", linewidth=1.2)
+    plt.title(
+        f"Top {top_n} des variables corrélées à la Valeur Marchande (VM brute)\nClassées par typologie métier",
+        fontsize=14,
+        fontweight="bold",
+        color="#2e3440",
+        pad=18,
+    )
+    plt.xlabel(
+        "Coefficient de corrélation de Pearson (r) avec market_value_in_eur",
+        fontsize=11,
+        fontweight="semibold",
+        color="#4c566a",
+        labelpad=10,
+    )
+    plt.ylabel("Indicateurs", fontsize=11, fontweight="semibold", color="#4c566a")
+
+    # Placement précis de la légende pour éviter les chevauchements
+    plt.legend(
+        title="Familles Métiers",
+        title_fontproperties={"weight": "bold"},
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+        borderaxespad=0,
+        frameon=True,
+        facecolor="#ffffff",
+    )
+
+    # Nettoyage des bordures superflues pour un look épuré
+    sns.despine(left=True, bottom=True)
+    plt.grid(axis="x", linestyle="--", alpha=0.6, color="#e5e9f0")
     plt.tight_layout()
     plt.show()
 
-    return tableau_affichage
+    return top_explicatives[["Variable", "Description", "Famille", "Corr_Cible_Brute"]]
