@@ -3,42 +3,19 @@ import pandas as pd
 from sklearn.preprocessing import MultiLabelBinarizer
 from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
+import os
+import pickle
 
 
 def nettoyer_age_et_dates(df, colonnes_dates=None):
-    """Nettoie la colonne 'age' (extraction et conversion en int) et applique le
+    """Nettoie et normalise les colonnes de dates et calcule l'âge exact du joueur
 
-    format datetime normalisé (sans les heures visibles) aux colonnes de dates.
-
-    Paramètres:
-    -----------
-    df : dataframe
-        Le dataset de football à nettoyer.
-    colonnes_dates : list of str, optional
-        La liste explicite des colonnes de dates à traiter (ex: ['date_of_birth',
-        'date']).
-        Si None, la fonction cherchera automatiquement les colonnes contenant
-        'date' ou 'dob' dans leur nom.
+    au moment de la saison de manière robuste.
     """
     # Copie de sécurité pour éviter le SettingWithCopyWarning
     df_clean = df.copy()
 
-    # Nettoyage de l'âge
-    if "age" in df_clean.columns:
-        print("Nettoyage de la colonne 'age'")
-        # Force en texte, extrait les chiffres avant le tiret (ex: 23-328 -> 23)
-        df_clean["age"] = df_clean["age"].astype(str).str.extract(r"^(\d+)")
-
-        # Sécurité pour les NaN : remplacement temporaire par une valeur neutre avant conversion
-        df_clean["age"] = df_clean["age"].fillna(0)
-
-        # Conversion finale en entier (int)
-        df_clean["age"] = df_clean["age"].astype(int)
-        print("Colonne 'age' convertie en entiers avec succès.")
-    else:
-        print("Colonne 'age' introuvable dans le dataframe.")
-
-    # Nettoyage des colonnes de dates
+    # 1. NETTOYAGE DES COLONNES DE DATES
     # Si l'utilisateur n'a pas fourni de liste, on détecte automatiquement les colonnes de date
     if colonnes_dates is None:
         colonnes_dates = [
@@ -53,17 +30,68 @@ def nettoyer_age_et_dates(df, colonnes_dates=None):
             if col in df_clean.columns:
                 # Conversion au format datetime Pandas officiel
                 df_clean[col] = pd.to_datetime(df_clean[col], errors="coerce")
-
-                # Ecrase l'heure en la figeant strictement à minuit (00:00:00)
-                # Tout en conservant le format datetime64[ns] idéal pour les calculs.
+                # Écrase l'heure en la figeant strictly à minuit
                 df_clean[col] = df_clean[col].dt.normalize()
-        print("Toutes les heures ont été retirées (remises à minuit).")
+        print(" -> Toutes les heures ont été remises à minuit.")
     else:
         print("Aucune colonne de date détectée ou fournie.")
 
-    print("Nettoyage de l'âge et des dates terminé.\n")
-    return df_clean
+    # 2. EXTRACTION DE L'ANNÉE DE NAISSANCE ('born')
+    if "date_of_birth" in df_clean.columns:
+        df_clean["born"] = df_clean["date_of_birth"].dt.year
+        print(" -> Colonne 'born' (année de naissance) extraite.")
+    else:
+        df_clean["born"] = np.nan
+        print(" -> Attention : 'date_of_birth' manquante, 'born' initialisée à NaN.")
 
+    # 3. CALCUL ET NETTOYAGE ROBUSTE DE L'ÂGE
+    print("Calcul et nettoyage de la colonne 'age'...")
+
+    # Étape A : On calcule l'âge théorique basé sur la saison et l'année de naissance
+    if "season_year" in df_clean.columns and "date_of_birth" in df_clean.columns:
+        df_clean["age_calcule"] = df_clean["season_year"] - df_clean["born"]
+    else:
+        df_clean["age_calcule"] = np.nan
+
+    # Étape B : On nettoie l'âge brut textuel (ex: '23-328' -> 23) au cas où on en aurait besoin
+    if "age" in df_clean.columns:
+        df_clean["age_brut"] = (
+            df_clean["age"].astype(str).str.extract(r"^(\d+)")
+        )
+        df_clean["age_brut"] = pd.to_numeric(
+            df_clean["age_brut"], errors="coerce"
+        )
+    else:
+        df_clean["age_brut"] = np.nan
+
+    # Étape C : Stratégie de fusion (On prend l'âge calculé, sinon l'âge brut de FBref)
+    df_clean["age"] = df_clean["age_calcule"].fillna(df_clean["age_brut"])
+
+    # Étape D : Sécurité absolue pour les NaN restants avant la conversion en Int
+    # Remplacement par la médiane des âges du dataset pour ne pas fausser le Random Forest
+    if df_clean["age"].isna().sum() > 0:
+        valeur_remplacement = df_clean["age"].median()
+        # Si tout est vide (cas extrême), on met une valeur par défaut
+        if pd.isna(valeur_remplacement):
+            valeur_remplacement = 25
+        df_clean["age"] = df_clean["age"].fillna(valeur_remplacement)
+        print(
+            f" -> Attention : {df_clean['age'].isna().sum()} âges manquants remplacés par la médiane ({int(valeur_remplacement)} ans)."
+        )
+
+    # Conversion finale STRICTE en entier
+    df_clean["age"] = df_clean["age"].astype(int)
+
+    # Nettoyage des colonnes temporaires pour garder le DataFrame propre
+    colonnes_temporaires = ["age_calcule", "age_brut"]
+    df_clean = df_clean.drop(
+        columns=[col for col in colonnes_temporaires if col in df_clean.columns]
+    )
+
+    print(" -> Colonne 'age' convertie strictement en entiers (int).")
+    print("Nettoyage de l'âge et des dates terminé.\n")
+
+    return df_clean
 
 def verifier_doublons_metier_et_techniques(dataframe):
     """Analyse et distingue les doublons de mercato des doublons techniques
@@ -685,55 +713,6 @@ def detecter_tous_outliers_iqr_trie_filtre(df):
     return rapport_outliers, list(index_tous_outliers)
 
 
-def imputer_donnees_physiques_et_ages(df):
-    """Nettoie la taille des joueurs en imputant les valeurs aberrantes
-
-    par la médiane de leur poste, puis calcule l'année de naissance et l'âge.
-    """
-    print("Début du traitement de la taille et du calcul des âges...")
-
-    # Copie locale pour éviter les warnings "SettingWithCopy"
-    df_clean = df.copy()
-
-    # Nettoyage et imputation de la taille
-    if "height_in_cm" in df_clean.columns:
-        # Remplacement des valeurs aberrantes par NaN
-        df_clean.loc[
-            (df_clean["height_in_cm"] < 150)
-            | (df_clean["height_in_cm"] > 220),
-            "height_in_cm",
-        ] = np.nan
-
-        # Imputation par la médiane du poste (version optimisée sans lambda)
-        if "position" in df_clean.columns:
-            df_clean["height_in_cm"] = df_clean["height_in_cm"].fillna(
-                df_clean.groupby("position")["height_in_cm"].transform("median")
-            )
-            print(" -> Valeurs aberrantes de taille imputées par la médiane du poste.")
-        else:
-            # Sécurité si la colonne 'position' n'existe pas, on prend la médiane globale
-            df_clean["height_in_cm"] = df_clean["height_in_cm"].fillna(
-                df_clean["height_in_cm"].median()
-            )
-            print(" -> Valeurs aberrantes de taille imputées par la médiane globale (colonne 'position' manquante).")
-
-    # Calcul correct de l'âge
-    if "date_of_birth" in df_clean.columns and "season_year" in df_clean.columns:
-        # Extraction de l'année de naissance
-        df_clean["born"] = pd.to_datetime(
-            df_clean["date_of_birth"], errors="coerce"
-        ).dt.year
-
-        # Calcul de l'âge au moment de la saison
-        df_clean["age"] = df_clean["season_year"] - df_clean["born"]
-        print(" -> Colonnes 'born' (année) et 'age' calculées avec succès.")
-    else:
-        print("Colonne 'date_of_birth' ou 'season_year' manquante. Calcul de l'âge annulé.")
-
-    print("Traitement terminé.")
-
-    return df_clean
-
 
 def calculer_jours_contrat_restants(df):
     """Calcule le nombre de jours de contrat restants pour chaque joueur
@@ -789,72 +768,121 @@ def calculer_jours_contrat_restants(df):
     return df_clean
 
 
-def normaliser_variables_continues(df):
-    """Identifie les variables continues (non binaires, non encodées) et crée
+import os
+import pickle
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
 
-    leurs versions normalisées (MinMax 0-1) avec le suffixe '_nor'.
+
+def executer_pipeline_preprocessing(
+    df,
+    dossier_sortie,
+    cols_a_normaliser,
+    col_poste="position",
+    height_min=155,
+    height_max=210,
+):
+    """Exécute l'intégralité du pipeline de préprocessing : split temporel,
+
+    traitement des outliers (par la médiane du poste sur le train),
+    normalisation MinMax et sauvegardes.
     """
-    print("Début du processus de normalisation (MinMax)...")
 
-    # Copie locale pour éviter les warnings
-    df_clean = df.copy()
-
-    # Identification des colonnes à exclure de la normalisation
-    cols_exclure_normalisation = [
-        *[c for c in df_clean.columns if c.startswith("pos_")],
-        *[c for c in df_clean.columns if c.startswith("sub_position_")],
-        *[c for c in df_clean.columns if c.startswith("league_")],
-        *[c for c in df_clean.columns if c.startswith("foot_")],
-        *[c for c in df_clean.columns if c.startswith("classement_FIFA_")],
-        *[
-            c
-            for c in df_clean.columns
-            if "injury_musculaire" in c
-            and df_clean[c].dropna().isin([0, 1]).all()
-        ],
-        *[
-            c
-            for c in df_clean.columns
-            if c.startswith("injury_") and df_clean[c].dropna().isin([0, 1]).all()
-        ],
-        "season_year",
-    ]
-
-    # Séparation automatique des colonnes numériques (continues vs binaires)
-    numeric_cols = df_clean.select_dtypes(include="number").columns.tolist()
-    binary_cols = [
-        c for c in numeric_cols if df_clean[c].dropna().isin([0, 1]).all()
-    ]
-
-    # Isolation des colonnes qui doivent être normalisées
-    cols_a_normaliser = [
-        c
-        for c in numeric_cols
-        if c not in cols_exclure_normalisation and c not in binary_cols
-    ]
-
+    # Split Temporel (Train: 2020-2023, Val: 2024, Test: 2025)
+    df_train = df[df["season_year"].isin([2020, 2021, 2022, 2023])].copy()
+    df_val = df[df["season_year"].isin([2024])].copy()
+    df_test = df[df["season_year"].isin([2025])].copy()
     print(
-        f"Colonnes binaires (déjà en 0/1, à ne pas normaliser) : {len(binary_cols)}"
-    )
-    print(
-        f"Colonnes continues à dupliquer en version '_nor'     : {len(cols_a_normaliser)}"
+        f"Split effectué. Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}"
     )
 
-    print()
-
-    # Application du MinMaxScaler (0-1)
-    if cols_a_normaliser:
-        scaler = MinMaxScaler()
-        cols_normalisees_noms = [f"{c}_nor" for c in cols_a_normaliser]
-
-        # Imputation temporaire par la médiane pour le fit_transform (sécurité Sklearn)
-        df_clean[cols_normalisees_noms] = scaler.fit_transform(
-            df_clean[cols_a_normaliser].fillna(df_clean[cols_a_normaliser].median())
+    # Vérification de la présence de la colonne de poste
+    if col_poste not in df_train.columns:
+        raise ValueError(
+            f"La colonne de poste '{col_poste}' est absente du dataset."
         )
-        print(
-            f"\nCréation des colonnes '_nor' terminée. Total de colonnes actuel : {df_clean.shape[1]}"
-        )
-    else:
-        print("\nAucune colonne continue à normaliser n'a été trouvée.")
 
-    return df_clean
+    # Traitement des outliers par poste (Taille en cm)
+    # On calcule les médianes par poste UNIQUEMENT sur le train pour éviter le data leakage
+    medianes_par_poste = (
+        df_train.groupby(col_poste)["height_in_cm"].median().to_dict()
+    )
+
+    # Médiane globale de secours au cas où un poste bizarre n'aurait pas de médiane
+    mediane_globale_train = df_train["height_in_cm"].median()
+
+    outlier_stats = {
+        "height_in_cm": {
+            "lower": height_min,
+            "upper": height_max,
+            "medianes_par_poste": medianes_par_poste,
+            "mediane_globale": mediane_globale_train,
+        }
+    }
+
+    # Application de la correction sur les 3 splits
+    for df_split in [df_train, df_val, df_test]:
+        # Détection des lignes qui ont un problème de taille
+        mask_outlier = (df_split["height_in_cm"] < height_min) | (
+            df_split["height_in_cm"] > height_max
+        )
+
+        if mask_outlier.any():
+            # Pour les lignes en anomalie, on récupère la médiane correspondant à leur poste
+            valeurs_remplacement = df_split[col_poste].map(medianes_par_poste)
+
+            # Sécurité : si un poste n'était pas dans le train, on met la médiane globale
+            valeurs_remplacement = valeurs_remplacement.fillna(
+                mediane_globale_train
+            )
+
+            # On applique le remplacement uniquement là où le masque est Vrai
+            df_split.loc[mask_outlier, "height_in_cm"] = valeurs_remplacement[
+                mask_outlier
+            ]
+
+    # Sauvegarde du dictionnaire complet des stats d'outliers
+    os.makedirs(dossier_sortie, exist_ok=True)
+    with open(os.path.join(dossier_sortie, "outlier_stats.pkl"), "wb") as f:
+        pickle.dump(outlier_stats, f)
+    print(
+        f"Outliers traités (Bornes: [{height_min}, {height_max}] | Remplacement par la médiane du poste du Train)."
+    )
+
+    # Normalisation MinMax [0-1]
+    cols_manquantes = [c for c in cols_a_normaliser if c not in df_train.columns]
+    if cols_manquantes:
+        raise ValueError(f"Colonnes absentes du dataset : {cols_manquantes}")
+
+    scaler = MinMaxScaler()
+    scaler.fit(df_train[cols_a_normaliser])
+
+    for df_split in [df_train, df_val, df_test]:
+        normalized = scaler.transform(df_split[cols_a_normaliser])
+        for i, col in enumerate(cols_a_normaliser):
+            df_split[f"{col}_nor"] = normalized[:, i]
+
+    # Sauvegarde du scaler
+    with open(os.path.join(dossier_sortie, "normalisation.pkl"), "wb") as f:
+        pickle.dump(scaler, f)
+    print("Normalisation MinMax appliquée avec succès.")
+
+    # Sauvegarde des fichiers finaux
+    df_train.to_csv(
+        os.path.join(dossier_sortie, "train.csv"),
+        index=False,
+        encoding="utf-8-sig",
+    )
+    df_val.to_csv(
+        os.path.join(dossier_sortie, "val.csv"),
+        index=False,
+        encoding="utf-8-sig",
+    )
+    df_test.to_csv(
+        os.path.join(dossier_sortie, "test.csv"),
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    print(f"Pipeline terminé ! Fichiers sauvegardés dans : {dossier_sortie}\n")
+    return df_train, df_val, df_test
