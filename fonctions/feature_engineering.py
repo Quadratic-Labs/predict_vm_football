@@ -145,19 +145,6 @@ def generer_feature_engineering_football(df):
             df_fe["score_hype_nation"] += poids * df_fe[col_fifa]
 
 
-    # Impact du remplacement
-    if all(
-        c in df_fe.columns
-        for c in ["Performance_Gls", "Performance_Ast", "Subs_Subs"]
-    ):
-        df_fe["impact_sub"] = np.where(
-            df_fe["Subs_Subs"] > 0,
-            (df_fe["Performance_Gls"] + df_fe["Performance_Ast"])
-            / df_fe["Subs_Subs"],
-            0.0,  # 0 si le joueur n'est jamais entré en jeu comme remplaçant
-        )
-
-
     # Rentabilité des buts par minute
     if "Performance_Gls" in df_fe.columns and "Playing Time_Min" in df_fe.columns:
         df_fe["rentabilite_buts_minutes"] = np.where(
