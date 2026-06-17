@@ -19,9 +19,6 @@ def generer_feature_engineering_football(df):
             drop=True
         )
 
-    # Profils de style de jeu et indices tactiques
-    print("Calcul des ratios tactiques et styles de jeu...")
-
     # Indice de verticalité
     if "Standard_G/SoT" in df_fe.columns and "Standard_SoT%" in df_fe.columns:
         # Indique l'efficacité face au but par rapport à la précision globale
@@ -54,9 +51,6 @@ def generer_feature_engineering_football(df):
             df_fe["Performance_Gls"] / df_fe["xg"],
             1.0,  # Valeur neutre de 1 si pas d'xg
         )
-
-    # Indicateurs de dynamiques
-    print("Calcul des dynamiques et trajectoires inter-saisons...")
 
     if "player" in df_fe.columns and "season_year" in df_fe.columns:
         
@@ -97,9 +91,6 @@ def generer_feature_engineering_football(df):
 
         # Nettoyage de la colonne technique temporaire
         df_fe.drop(columns=["saison_precedente_reelle"], inplace=True)
-
-    # Contextualisation de la valeur du joueur dans son équipe
-    print("Calcul du poids du joueur dans son équipe...")
 
     # Poids offensif du joueur (Buts + Passes Décisives du joueur / Total Buts de l'équipe)
     if all(
