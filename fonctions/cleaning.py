@@ -797,7 +797,7 @@ def executer_pipeline_preprocessing(
         )
 
     # Traitement des outliers par poste (Taille en cm)
-    # On calcule les médianes par poste UNIQUEMENT sur le train pour éviter le data leakage
+    # On calcule les médianes par poste uniquement sur le train pour éviter le data leakage
     medianes_par_poste = (
         df_train.groupby(col_poste)["height_in_cm"].median().to_dict()
     )
