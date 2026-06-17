@@ -782,10 +782,10 @@ def executer_pipeline_preprocessing(
     normalisation MinMax et sauvegardes.
     """
 
-    # Split Temporel (Train: 2020-2023, Val: 2024, Test: 2025)
-    df_train = df[df["season_year"].isin([2020, 2021, 2022, 2023])].copy()
-    df_val = df[df["season_year"].isin([2024])].copy()
-    df_test = df[df["season_year"].isin([2025])].copy()
+    # Split Temporel (Train: 2020-2022, Val: 2023, Test: 2024)
+    df_train = df[df["season_year"].isin([2020, 2021, 2022])].copy()
+    df_val = df[df["season_year"].isin([2023])].copy()
+    df_test = df[df["season_year"].isin([2024])].copy()
     print(
         f"Split effectué. Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}"
     )
