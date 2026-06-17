@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.model_selection import train_test_split
 from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
 import os
@@ -773,6 +774,8 @@ def executer_pipeline_preprocessing(
     dossier_sortie,
     cols_a_normaliser,
     col_poste="position",
+    methode_split="temporel",
+    seed_aleatoire=42,
     height_min=155,
     height_max=210,
 ):
@@ -782,12 +785,47 @@ def executer_pipeline_preprocessing(
     normalisation MinMax et sauvegardes.
     """
 
-    # Split Temporel (Train: 2020-2022, Val: 2023, Test: 2024)
-    df_train = df[df["season_year"].isin([2020, 2021, 2022])].copy()
-    df_val = df[df["season_year"].isin([2023])].copy()
-    df_test = df[df["season_year"].isin([2024])].copy()
+    if "season_year" in df.columns:
+        df_filtré = df[df["season_year"] != 2025].copy()
+        nb_exclus = len(df) - len(df_filtré)
+        if nb_exclus > 0:
+            print(
+                f"{nb_exclus} lignes de la saison 2025 ont été écartées du pipeline."
+            )
+    else:
+        df_filtré = df.copy()
+
+    if methode_split == "temporel":
+        # Split Temporel classique (Train: 2020-2022, Val: 2023, Test: 2024)
+        df_train = df_filtré[
+            df_filtré["season_year"].isin([2020, 2021, 2022])
+        ].copy()
+        df_val = df_filtré[df_filtré["season_year"].isin([2023])].copy()
+        df_test = df_filtré[df_filtré["season_year"].isin([2024])].copy()
+
+    elif methode_split == "aleatoire":
+        # Split Aléatoire (ex: 70% Train, 15% Val, 15% Test)
+        # Étape 1 : On isole le Train (70%) et un bloc temporaire de Validation + Test (30%)
+        df_train, df_temp = train_test_split(
+            df_filtré, test_size=0.30, random_state=seed_aleatoire
+        )
+        # Étape 2 : On coupe le bloc temporaire en deux parts égales (15% Val, 15% Test)
+        df_val, df_test = train_test_split(
+            df_temp, test_size=0.50, random_state=seed_aleatoire
+        )
+
+        # Re-conversion explicite en copie pour éviter les warnings Pandas
+        df_train = df_train.copy()
+        df_val = df_val.copy()
+        df_test = df_test.copy()
+
+    else:
+        raise ValueError(
+            f"Méthode de split '{methode_split}' inconnue. Choisissez 'temporel' ou 'aleatoire'."
+        )
+    
     print(
-        f"Split effectué. Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}"
+        f"Split effectué -> Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}"
     )
 
     # Vérification de la présence de la colonne de poste
