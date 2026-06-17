@@ -132,6 +132,16 @@ def generer_feature_engineering_football(df):
     if "injury_days_total" in df_fe.columns:
         df_fe["taux_indisponibilite"] = (df_fe["injury_days_total"] / 365.0).clip(upper=1.0)
 
+    if "player" in df_fe.columns and "taux_indisponibilite" in df_fe.columns:
+        # Récupération du taux de la saison précédente
+        df_fe["taux_indisponibilite_prec"] = df_fe.groupby("player")["taux_indisponibilite"].shift(1).fillna(0)
+        
+        # Indicateur de fragilité récurrente (Blessé deux saisons de suite)
+        df_fe["fragilite_chronique"] = np.where(
+            (df_fe["taux_indisponibilite"] > 0.15) & (df_fe["taux_indisponibilite_prec"] > 0.15), 
+            1, 
+            0
+        )
 
     # Score lié à la nation
     # On initialise le score à 0
@@ -158,6 +168,14 @@ def generer_feature_engineering_football(df):
     if "contrat_jours_restants" in df_fe.columns:
         df_fe["urgence_contractuelle"] = np.where(
             df_fe["contrat_jours_restants"] <= 365, 1, 0
+        )
+    
+    # Indice d'impact de points (buts par match pondérés par les points d'équipe)
+    if "Performance_Gls" in df_fe.columns and "Team Success_PPM" in df_fe.columns and "Playing Time_MP" in df_fe.columns:
+        df_fe["impact_buts_points"] = np.where(
+            df_fe["Playing Time_MP"] > 0,
+            (df_fe["Performance_Gls"] / df_fe["Playing Time_MP"]) * df_fe["Team Success_PPM"],
+            0.0
         )
     
     
