@@ -178,7 +178,44 @@ def generer_feature_engineering_football(df):
             0.0
         )
     
-    
+    # Score de indiscipline (Pondération : Rouge = 3 Jaunes)
+    if "Performance_CrdY" in df_fe.columns and "Performance_CrdR" in df_fe.columns:
+        df_fe["score_indiscipline_brut"] = df_fe["Performance_CrdY"] + (df_fe["Performance_CrdR"] * 3)
+        
+        # Rapporté aux 90 minutes pour l'équité temporelle
+        if "Playing Time_90s" in df_fe.columns:
+            df_fe["indiscipline_par_90"] = np.where(
+                df_fe["Playing Time_90s"] > 0,
+                df_fe["score_indiscipline_brut"] / df_fe["Playing Time_90s"],
+                0.0
+            )
+            df_fe.drop(columns=["score_indiscipline_brut"], inplace=True)
+
+    # Part des buts marqués hors penalty
+    if "Performance_Gls" in df_fe.columns and "Performance_PK" in df_fe.columns:
+        df_fe["ratio_buts_hors_penalty"] = np.where(
+            df_fe["Performance_Gls"] > 0,
+            (df_fe["Performance_Gls"] - df_fe["Performance_PK"]) / df_fe["Performance_Gls"],
+            0.0
+        )
+
+    # On identifie dynamiquement toutes les colonnes liées aux postes encodés
+    colonnes_postes = [c for c in df_fe.columns if c.startswith("pos_")]
+
+    if colonnes_postes:
+        print(f"Colonnes de postes détectées pour la polyvalence : {colonnes_postes}")
+        # On fait la somme horizontale (.sum(axis=1)) des colonnes de postes.
+        # Si un joueur est à la fois MF (1) et FW (1), la somme fera 2.
+        df_fe["est_polyvalent"] = df_fe[colonnes_postes].sum(axis=1) - 1
+
+    # Taux de matchs terminés sur les matchs commencés
+    if "Starts_Compl" in df_fe.columns and "Playing Time_Starts" in df_fe.columns:
+        df_fe["taux_matchs_termines"] = np.where(
+            df_fe["Playing Time_Starts"] > 0,
+            df_fe["Starts_Compl"] / df_fe["Playing Time_Starts"],
+            0.0
+        )
+
     print()
     print(
         f"Feature Engineering terminé ! Nombre total de colonnes : {df_fe.shape[1]}"
