@@ -873,10 +873,6 @@ def executer_pipeline_preprocessing(
                 mask_outlier
             ]
 
-    # Sauvegarde du dictionnaire complet des stats d'outliers
-    os.makedirs(dossier_sortie, exist_ok=True)
-    with open(os.path.join(dossier_sortie, "outlier_stats.pkl"), "wb") as f:
-        pickle.dump(outlier_stats, f)
     print(
         f"Outliers traités (Bornes: [{height_min}, {height_max}] | Remplacement par la médiane du poste du Train)."
     )
@@ -893,11 +889,6 @@ def executer_pipeline_preprocessing(
         normalized = scaler.transform(df_split[cols_a_normaliser])
         for i, col in enumerate(cols_a_normaliser):
             df_split[f"{col}_nor"] = normalized[:, i]
-
-    # Sauvegarde du scaler
-    with open(os.path.join(dossier_sortie, "normalisation.pkl"), "wb") as f:
-        pickle.dump(scaler, f)
-    print("Normalisation MinMax appliquée avec succès.")
 
     # Sauvegarde des fichiers finaux
     df_train.to_csv(
@@ -918,3 +909,48 @@ def executer_pipeline_preprocessing(
 
     print(f"Pipeline terminé ! Fichiers sauvegardés dans : {dossier_sortie}\n")
     return df_train, df_val, df_test
+
+
+def executer_pipeline_nettoyage(df, df_fifa):
+    """Exécute l'intégralité du pipeline de nettoyage enchaîné."""
+    
+    df_nettoye = df.copy()
+    
+    # Doublons
+    verifier_doublons_metier_et_techniques(df_nettoye)
+    df_nettoye = fusionner_doublons_techniques(df_nettoye)
+    df_nettoye = fusionner_et_recalculer_mercato(df_nettoye)
+    
+    # Âge et Dates
+    colonnes_dates = ["date_of_birth", "contract_expiration_date"]
+    df_nettoye = nettoyer_age_et_dates(df_nettoye, colonnes_dates=colonnes_dates)
+    
+    # Valeurs manquantes
+    diagnostiquer_valeurs_manquantes(df_nettoye, seuil=0.01)
+    df_nettoye = nettoyer_valeurs_manquantes_ciblees(df_nettoye)
+    diagnostiquer_valeurs_manquantes(df_nettoye, seuil=0.01)
+    
+    # Encodage
+    mes_variables = ["pos", "sub_position", "nation", "league", "foot"]
+    df_nettoye = encoder_dataset_football(
+        df=df_nettoye,
+        colonnes_categoriques=mes_variables,
+        df_fifa_historique=df_fifa,
+    )
+    
+    # Contrat
+    df_nettoye = calculer_jours_contrat_restants(df_nettoye)
+    
+    # Suppression colonnes
+    colonnes_redondantes = [
+        "Starts_Starts", "Standard_PK", "Standard_PKatt", "Standard_Gls", "90s", "Playing Time_Min%",
+        "Performance_SoTA", "Performance_G+A", "Team Success_+/-", "Team Success_+/-90", "Playing Time_Min", 
+        "Penalty Kicks_PKatt", "born", "np_xg", "xg_chain", "Per 90 Minutes_G+A-PK", "Per 90 Minutes_G-PK",
+        "join_key", "tm_join_key", "tm_join_key_full", "tm_id", "player_id", "dob_key", "tm_dob_key",
+        "match_method", "name", "date_of_birth", "dob_year", "date", "season", "valuation_season_year",
+        "contract_expiration_date", "Starts_Mn/Start"
+    ]
+    cols_a_supprimer = [c for c in colonnes_redondantes if c in df_nettoye.columns]
+    df_nettoye = supprimer_colonnes_du_dataset(df_nettoye, cols_a_supprimer)
+    
+    return df_nettoye
