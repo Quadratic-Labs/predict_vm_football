@@ -47,8 +47,8 @@ def generer_feature_engineering_football(df):
     # Ratio de Danger Converti (Efficacité devant le but : Buts réels / xG attendus)
     if "Performance_Gls" in df_fe.columns and "xg" in df_fe.columns:
         df_fe["efficacite_devant_but"] = np.where(
-            df_fe["xg"] > 1,
-            df_fe["Performance_Gls"] / df_fe["xg"],
+            df_fe["xg"] > 0,
+            df_fe["xg"] / df_fe["Performance_Gls"],
             1.0,  # Valeur neutre de 1 si pas d'xg
         )
 
@@ -187,6 +187,13 @@ def generer_feature_engineering_football(df):
         df_fe["ratio_buts_hors_penalty"] = np.where(
             df_fe["Performance_Gls"] > 0,
             (df_fe["Performance_Gls"] - df_fe["Performance_PK"]) / df_fe["Performance_Gls"],
+            0.0
+        )
+    
+    if "Performance_Gls" in df_fe.columns and "Performance_PK" in df_fe.columns:
+        df_fe["ratio_buts_penalty"] = np.where(
+            df_fe["Performance_Gls"] > 0,
+            1 - (df_fe["Performance_Gls"] - df_fe["Performance_PK"]) / df_fe["Performance_Gls"],
             0.0
         )
 
