@@ -1376,7 +1376,7 @@ def detecter_top_colinearites(df, top_n=15):
 
 
 def analyser_variables_les_plus_explicatives(
-    df, target_col="market_value_in_eur", top_n=15
+    df, target_col="market_value_in_eur", top_n=15, afficher_nom_technique=False, uniquement_gardiens=False
 ):
     """Calcule et affiche les variables les plus corrélées à la cible en brut
 
@@ -1384,12 +1384,20 @@ def analyser_variables_les_plus_explicatives(
     """
     print(f"Analyse des variables les plus explicatives pour : {target_col}")
 
+    # Filtrage spécifique pour les gardiens si demandé
+    if uniquement_gardiens:
+        if "pos_GK" in df.columns:
+            df = df[df["pos_GK"] == 1].copy()
+            print("Filtrage appliqué : Analyse exclusive des Gardiens de but.")
+        else:
+            print("Attention : Impossible de filtrer les gardiens (colonne 'pos_GK' absente).")
+
     if target_col not in df.columns:
         print(f"Erreur : La colonne cible '{target_col}' est absente.")
         return
 
     # Dictionnaire métier
-    dict_metier = {
+    dict_variables = {
         # Famille : Identité, âge et physique
         "player": ("Nom du joueur", "Identité et physique"),
         "team": ("Club du joueur", "Identité et physique"),
@@ -1479,43 +1487,43 @@ def analyser_variables_les_plus_explicatives(
             "Ligues et contexte international",
         ),
         "classement_FIFA_1": (
-            "Sélection nationale Rang FIFA 1-10",
+            "Sélection nationale Rang FIFA : 1",
             "Ligues et contexte international",
         ),
         "classement_FIFA_2": (
-            "Sélection nationale Rang FIFA 11-20",
+            "Sélection nationale Rang FIFA : 2",
             "Ligues et contexte international",
         ),
         "classement_FIFA_3": (
-            "Sélection nationale Rang FIFA 21-30",
+            "Sélection nationale Rang FIFA : 3",
             "Ligues et contexte international",
         ),
         "classement_FIFA_4": (
-            "Sélection nationale Rang FIFA 31-40",
+            "Sélection nationale Rang FIFA : 4",
             "Ligues et contexte international",
         ),
         "classement_FIFA_5": (
-            "Sélection nationale Rang FIFA 41-50",
+            "Sélection nationale Rang FIFA : 5",
             "Ligues et contexte international",
         ),
         "classement_FIFA_6": (
-            "Sélection nationale Rang FIFA 51-60",
+            "Sélection nationale Rang FIFA : 6",
             "Ligues et contexte international",
         ),
         "classement_FIFA_7": (
-            "Sélection nationale Rang FIFA 61-70",
+            "Sélection nationale Rang FIFA : 7",
             "Ligues et contexte international",
         ),
         "classement_FIFA_8": (
-            "Sélection nationale Rang FIFA 71-80",
+            "Sélection nationale Rang FIFA : 8",
             "Ligues et contexte international",
         ),
         "classement_FIFA_9": (
-            "Sélection nationale Rang FIFA 81-90",
+            "Sélection nationale Rang FIFA : 9",
             "Ligues et contexte international",
         ),
         "classement_FIFA_10": (
-            "Sélection nationale Rang FIFA 91+",
+            "Sélection nationale Rang FIFA : 10",
             "Ligues et contexte international",
         ),
         # Famille : Temps de jeu, contrat et chronologie
@@ -1524,9 +1532,9 @@ def analyser_variables_les_plus_explicatives(
             "Jours de contrat restants",
             "Temps de jeu et contrat",
         ),
-        "Playing Time_MP": ("Matchs disputés (MP)", "Temps de jeu et contrat"),
+        "Playing Time_MP": ("Matchs disputés", "Temps de jeu et contrat"),
         "Playing Time_Starts": (
-            "Titularisations (Starts)",
+            "Titularisations",
             "Temps de jeu et contrat",
         ),
         "Playing Time_90s": (
@@ -1585,6 +1593,7 @@ def analyser_variables_les_plus_explicatives(
             "Buts + Assists par 90 min",
             "Performance offensive",
         ),
+        "Performance_Fld": ("Fautes subies", "Performance offensive"),
         # Famille : Statistiques avancées (xG, xA, Création)
         "xg": ("Expected Goals (xG)", "Statistiques avancées"),
         "xa": ("Expected Assists (xa)", "Statistiques avancées"),
@@ -1593,10 +1602,10 @@ def analyser_variables_les_plus_explicatives(
             "Statistiques avancées",
         ),
         "xg_buildup": (
-            "Construction Expected Goals (xG Buildup)",
+            "Construction Expected Goals",
             "Statistiques avancées",
         ),
-        # Famille : Discipline et performance défensive ---
+        # Famille : Discipline et performance défensive
         "Performance_CrdY": ("Cartons jaunes reçus", "Discipline et défense"),
         "Performance_CrdR": ("Cartons rouges reçus", "Discipline et défense"),
         "Performance_2CrdY": (
@@ -1604,7 +1613,6 @@ def analyser_variables_les_plus_explicatives(
             "Discipline et défense",
         ),
         "Performance_Fls": ("Fautes commises", "Discipline et défense"),
-        "Performance_Fld": ("Fautes subies", "Discipline et défense"),
         "Performance_Int": ("Interceptions de passes", "Discipline et défense"),
         "Performance_TklW": ("Tacles réussis", "Discipline et défense"),
         "Performance_PKcon": ("Pénaltys concédés", "Discipline et défense"),
@@ -1630,13 +1638,13 @@ def analyser_variables_les_plus_explicatives(
             "Succès équipe et collectif",
         ),
         # Famille : Spécifique Gardien de but
-        "Performance_GA": ("Buts encaissés (GK)", "Spécifique Gardien"),
+        "Performance_GA": ("Buts encaissés", "Spécifique gardien"),
         "Performance_GA90": (
-            "Buts encaissés par 90 min (GK)",
+            "Buts encaissés par 90 min",
             "Spécifique gardien",
         ),
-        "Performance_Saves": ("Arrêts effectués", "Spécifique Gardien"),
-        "Performance_Save%": ("Pourcentage d'arrêts", "Spécifique Gardien"),
+        "Performance_Saves": ("Arrêts effectués", "Spécifique gardien"),
+        "Performance_Save%": ("Pourcentage d'arrêts", "Spécifique gardien"),
         "Performance_W": (
             "Victoires de l'équipe (si présent)",
             "Spécifique gardien",
@@ -1657,8 +1665,8 @@ def analyser_variables_les_plus_explicatives(
             "Pourcentage de Clean Sheets",
             "Spécifique gardien",
         ),
-        "Penalty Kicks_PKA": ("Pénaltys encaissés (GK)", "Spécifique gardien"),
-        "Penalty Kicks_PKsv": ("Pénaltys arrêtés (GK)", "Spécifique gardien"),
+        "Penalty Kicks_PKA": ("Pénaltys encaissés", "Spécifique gardien"),
+        "Penalty Kicks_PKsv": ("Pénaltys arrêtés", "Spécifique gardien"),
         "Penalty Kicks_PKm": (
             "Pénaltys ratés par l'adversaire",
             "Spécifique gardien",
@@ -1799,10 +1807,16 @@ def analyser_variables_les_plus_explicatives(
 
     # Traduction du texte
     top_explicatives["Description"] = top_explicatives["Variable"].apply(
-        lambda x: dict_metier.get(x, (x, "Non Classifié"))[0]
+        lambda x: dict_variables.get(x, (x, "Non Classifié"))[0]
     )
+
+    if afficher_nom_technique:
+        top_explicatives["Description"] = top_explicatives.apply(
+            lambda r: f"{r['Description']} ({r['Variable']})", axis=1
+        )
+
     top_explicatives["Famille"] = top_explicatives["Variable"].apply(
-        lambda x: dict_metier.get(x, (x, "Non Classifié"))[1]
+        lambda x: dict_variables.get(x, (x, "Non Classifié"))[1]
     )
 
     top_explicatives["Corr_Cible_Brute"] = top_explicatives[
@@ -1841,8 +1855,9 @@ def analyser_variables_les_plus_explicatives(
     )
 
     plt.axvline(0, color="#2e3440", linestyle="-", linewidth=1.2)
+    type_population = "Gardiens de but" if uniquement_gardiens else "Population Globale"
     plt.title(
-        f"Top {top_n} des variables corrélées à la Valeur Marchande (VM brute)\nClassées par typologie métier",
+        f"Top {top_n} des variables corrélées à la Valeur Marchande - {type_population}",
         fontsize=14,
         fontweight="bold",
         color="#2e3440",
@@ -1859,7 +1874,7 @@ def analyser_variables_les_plus_explicatives(
 
     # Placement précis de la légende pour éviter les chevauchements
     plt.legend(
-        title="Familles Métiers",
+        title="Familles de variables",
         title_fontproperties={"weight": "bold"},
         bbox_to_anchor=(1.02, 1),
         loc="upper left",
