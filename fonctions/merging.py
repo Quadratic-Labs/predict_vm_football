@@ -300,7 +300,12 @@ def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
     df_sd_clean = df_soccerdata.copy()
     df_sd_clean['join_key'] = df_sd_clean['player'].apply(normalize_name)
     # On s'assure que dob_key est bien une chaîne de l'année (ex: "1998")
-    df_sd_clean['dob_key'] = df_sd_clean['born'].astype(str).str.strip()
+    df_sd_clean['dob_key'] = (
+        pd.to_numeric(df_sd_clean['born'], errors='coerce')
+        .astype('Int64')
+        .astype(str)
+        .str.strip()
+    )
 
     def extract_season_start(season):
         season = str(season)
@@ -490,13 +495,32 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         fuzzy_rows = []
 
         for _, row in remaining.iterrows():
-            res = process.extractOne(row['join_key'], mapping_keys, scorer=fuzz.token_sort_ratio)
-            if res and res[1] >= score_min:
-                tm_id = df_mapping[df_mapping['join_key'] == res[0]].iloc[0]['tm_id']
-                # On combine les données de la ligne avec l'ID trouvé
+            res_set = process.extractOne(row['join_key'], mapping_keys, scorer=fuzz.token_set_ratio)
+            res_sort = process.extractOne(row['join_key'], mapping_keys, scorer=fuzz.token_sort_ratio)
+
+            best_res = None
+            if res_set and res_sort:
+                # Si les deux scorers s'accordent sur le même candidat, on est plus confiant :
+                # on accepte le match avec un seuil légèrement abaissé
+                if res_set[0] == res_sort[0]:
+                    best_score = max(res_set[1], res_sort[1])
+                    if best_score >= score_min - 5:
+                        best_res = (res_set[0], best_score, res_set[2])
+                # Sinon, on garde le meilleur score mais avec le seuil normal (plus strict)
+                else:
+                    candidate = max([res_set, res_sort], key=lambda x: x[1])
+                    if candidate[1] >= score_min:
+                        best_res = candidate
+            elif res_set and res_set[1] >= score_min:
+                best_res = res_set
+            elif res_sort and res_sort[1] >= score_min:
+                best_res = res_sort
+
+            if best_res:
+                tm_id = df_mapping[df_mapping['join_key'] == best_res[0]].iloc[0]['tm_id']
                 match_data = row.to_dict()
                 match_data['tm_id'] = tm_id
-                match_data['match_method'] = f'fuzzy_name({res[1]})'
+                match_data['match_method'] = f'fuzzy_name({best_res[1]:.1f})'
                 fuzzy_rows.append(match_data)
 
         merge_2 = pd.DataFrame(fuzzy_rows)
