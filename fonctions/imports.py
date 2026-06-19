@@ -990,61 +990,6 @@ def scrape_one(league_code: str, league_id: int, league_name: str, saison_label:
     log.info(f"[{league_name} | {saison_label}] Total : {len(all_players)} joueurs")
     return all_players
 
-def scrape_sofifa_big5(annee_debut: int, annee_fin: int, leagues_to_scrape: set, max_workers: int = 3) -> pd.DataFrame:
-    """
-    Scrape SoFIFA pour les années et codes de ligues spécifiés.
-    Exemple leagues_to_scrape: {"GB1", "ES1"}
-    Exemple années: 2020 à 2025
-    """
-    tasks = []
-    # Génération des tâches selon vos critères du notebook
-    for annee in range(annee_debut, annee_fin + 1):
-        if annee not in SOFIFA_SAISONS:
-            log.warning(f"Année {annee} non supportée dans le dictionnaire des saisons. Ignorée.")
-            continue
-        saison_info = SOFIFA_SAISONS[annee]
-        
-        for code in leagues_to_scrape:
-            if code not in SOFIFA_LEAGUES:
-                log.warning(f"Ligue code '{code}' non supportée. Ignorée.")
-                continue
-            lg_info = SOFIFA_LEAGUES[code]
-            tasks.append((code, lg_info["id"], lg_info["nom"], saison_info["label"], saison_info["version"]))
-
-    if not tasks:
-        print("Aucune tâche valide générée avec vos paramètres.")
-        return pd.DataFrame()
-
-    print(f"Lancement du scraping : {len(tasks)} tâches avec {max_workers} threads...")
-    all_data = []
-    
-    with ThreadPoolExecutor(max_workers=max_workers) as exe:
-        futures = {
-            exe.submit(scrape_one, code, lid, lg_name, s_label, v): (lg_name, s_label)
-            for code, lid, lg_name, s_label, v in tasks
-        }
-        for future in as_completed(futures):
-            lg_name, s_label = futures[future]
-            try:
-                all_data.extend(future.result())
-            except Exception as e:
-                log.error(f"Erreur critique sur [{lg_name} | {s_label}] : {e}")
-
-    if not all_data:
-        return pd.DataFrame()
-
-    # Traitement des types et nettoyage des doublons
-    df = pd.DataFrame(all_data)
-    for col in ("age", "overall", "potentiel"):
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df = df.drop_duplicates(subset=["saison", "id"])
-    df = df.sort_values(["saison", "ligue", "overall"], ascending=[True, True, False])
-    
-    return df
-
-
-
 
 # Données du classement FIFA
 
