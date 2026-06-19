@@ -6,6 +6,8 @@ from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
 import os
 import pickle
+import pycountry
+import pycountry_convert as pc
 
 
 def nettoyer_age_et_dates(df, colonnes_dates=None):
@@ -565,6 +567,69 @@ def encoder_dataset_football(
                 df_encoded[f"classement_FIFA_{i}"] = (
                     df_encoded["rank"] == i
                 ).astype(int)
+
+            
+            # Mapping des codes FBref vers les Confédérations FIFA (logique sportive, pas géographique)
+            CODE_TO_CONFEDERATION = {
+                # UEFA (Europe + Turquie, Chypre, Russie, Caucase, Kosovo)
+                "ALB": "UEFA", "ARM": "UEFA", "AUT": "UEFA", "BEL": "UEFA", "BIH": "UEFA",
+                "BUL": "UEFA", "CRO": "UEFA", "CYP": "UEFA", "CZE": "UEFA", "DEN": "UEFA",
+                "ENG": "UEFA", "ESP": "UEFA", "EST": "UEFA", "FIN": "UEFA", "FRA": "UEFA",
+                "FRO": "UEFA", "GEO": "UEFA", "GER": "UEFA", "GRE": "UEFA", "HUN": "UEFA",
+                "IRL": "UEFA", "ISL": "UEFA", "ISR": "UEFA", "ITA": "UEFA", "KVX": "UEFA",
+                "LTU": "UEFA", "LUX": "UEFA", "LVA": "UEFA", "MDA": "UEFA", "MKD": "UEFA",
+                "MLT": "UEFA", "MNE": "UEFA", "NED": "UEFA", "NIR": "UEFA", "NOR": "UEFA",
+                "POL": "UEFA", "POR": "UEFA", "ROU": "UEFA", "RUS": "UEFA", "SCO": "UEFA",
+                "SRB": "UEFA", "SUI": "UEFA", "SVK": "UEFA", "SVN": "UEFA", "SWE": "UEFA",
+                "TUR": "UEFA", "UKR": "UEFA", "WAL": "UEFA",
+
+                # CONMEBOL (Amérique du Sud)
+                "ARG": "CONMEBOL", "BOL": "CONMEBOL", "BRA": "CONMEBOL", "CHI": "CONMEBOL",
+                "COL": "CONMEBOL", "ECU": "CONMEBOL", "PAR": "CONMEBOL", "PER": "CONMEBOL",
+                "URU": "CONMEBOL", "VEN": "CONMEBOL", "GUF": "CONMEBOL", "SUR": "CONMEBOL",
+
+                # CONCACAF (Amérique du Nord/Centrale/Caraïbes)
+                "CAN": "CONCACAF", "CRC": "CONCACAF", "CUW": "CONCACAF", "DOM": "CONCACAF",
+                "GLP": "CONCACAF", "GRN": "CONCACAF", "HAI": "CONCACAF", "HON": "CONCACAF",
+                "JAM": "CONCACAF", "MEX": "CONCACAF", "MSR": "CONCACAF", "MTQ": "CONCACAF",
+                "PAN": "CONCACAF", "PUR": "CONCACAF", "SKN": "CONCACAF", "USA": "CONCACAF",
+
+                # CAF (Afrique)
+                "ALG": "CAF", "ANG": "CAF", "BDI": "CAF", "BEN": "CAF", "BFA": "CAF",
+                "CGO": "CAF", "CHA": "CAF", "CIV": "CAF", "CMR": "CAF", "COD": "CAF",
+                "COM": "CAF", "CPV": "CAF", "CTA": "CAF", "EGY": "CAF", "EQG": "CAF",
+                "GAB": "CAF", "GAM": "CAF", "GHA": "CAF", "GNB": "CAF", "GUI": "CAF",
+                "KEN": "CAF", "LBY": "CAF", "MAD": "CAF", "MAR": "CAF", "MLI": "CAF",
+                "MOZ": "CAF", "MTN": "CAF", "NGA": "CAF", "RSA": "CAF", "SEN": "CAF",
+                "SLE": "CAF", "TAN": "CAF", "TOG": "CAF", "TUN": "CAF", "UGA": "CAF",
+                "ZAM": "CAF", "ZIM": "CAF",
+
+                # AFC (Asie, Australie incluse depuis 2006)
+                "AUS": "AFC", "BAN": "AFC", "CHN": "AFC", "IDN": "AFC", "IRN": "AFC",
+                "IRQ": "AFC", "JOR": "AFC", "JPN": "AFC", "KOR": "AFC", "KSA": "AFC",
+                "MAS": "AFC", "PHI": "AFC", "SYR": "AFC", "UAE": "AFC", "UZB": "AFC",
+
+                # OFC (Océanie, hors Australie)
+                "NCL": "OFC", "NZL": "OFC",
+            }
+
+            def get_confederation(code_fbref):
+                if pd.isna(code_fbref):
+                    return None
+                return CODE_TO_CONFEDERATION.get(code_fbref, "Inconnu")
+
+
+
+
+            # ── Ajout de la variable confédération FIFA ───────────────────────
+            df_encoded["confederation"] = df_encoded["nation"].apply(get_confederation)
+
+            df_encoded = pd.get_dummies(
+                df_encoded, columns=["confederation"], prefix="confederation"
+            )
+            for col in [c for c in df_encoded.columns if c.startswith("confederation_")]:
+                df_encoded[col] = df_encoded[col].astype(int)
+            print("   • Variable 'confederation' encodée en colonnes binaires.")
 
             # Suppression des colonnes devenues inutiles (ancienne nation, rang brut et clé de jointure)
             df_encoded = df_encoded.drop(columns=["rank", "nation_join"])
