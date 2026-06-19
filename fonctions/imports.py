@@ -516,9 +516,9 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
                     # Affiche les colonnes xG si présentes
                     xg_cols = [c for c in df.columns if 'xG' in c or 'xA' in c or 'npxG' in c or 'Expected' in c]
                     if xg_cols:
-                        print(f"     {len(df)} lignes | Colonnes xG trouvées : {xg_cols}")
+                        print(f"     {len(df)} lignes")
                     else:
-                        print(f"     {len(df)} lignes | (pas de xG dans ce stat_type)")
+                        print(f"     {len(df)} lignes")
                 else:
                     print(f"     Vide")
             except Exception as e:
