@@ -169,11 +169,19 @@ def generer_feature_engineering_football(df):
             0.0
         )
     
-    # Score de indiscipline (Pondération : Rouge = 3 Jaunes)
-    if "Performance_CrdY" in df_fe.columns and "Performance_CrdR" in df_fe.columns:
-        df_fe["score_indiscipline_brut"] = df_fe["Performance_CrdY"] + (df_fe["Performance_CrdR"] * 3)
+    # Score de indiscipline (Pondération : Rouge = 3 Jaunes)    
+    if all(c in df_fe.columns for c in ["Performance_CrdY", "Performance_CrdR", "Performance_2CrdY"]):
+        rouge_direct = df_fe["Performance_CrdR"] - df_fe["Performance_2CrdY"]
         
-        # Rapporté aux 90 minutes pour l'équité temporelle
+        # Jaunes "simples" = jaunes totaux moins ceux qui ont causé une expulsion (2 par double jaune)
+        jaune_simple = df_fe["Performance_CrdY"] - (df_fe["Performance_2CrdY"] * 2)
+        
+        df_fe["score_indiscipline_brut"] = (
+            jaune_simple               * 1 +
+            rouge_direct                * 3 +
+            df_fe["Performance_2CrdY"]  * 3
+        )
+
         if "Playing Time_90s" in df_fe.columns:
             df_fe["indiscipline_par_90"] = np.where(
                 df_fe["Playing Time_90s"] > 0,
