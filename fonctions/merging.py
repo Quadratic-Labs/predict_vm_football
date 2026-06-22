@@ -490,34 +490,33 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     print(f"[1] Nom exact (mapping)     : {len(merge_1):>5} | restants : {len(remaining)}")
 
     # Fuzzy matching sur le mapping
-    if not remaining.empty:
-        mapping_keys = df_mapping['join_key'].tolist()
+    # Fuzzy matching sur le mapping sécurisé
+    if not remaining.empty and not df_mapping.empty:
+        mapping_dict = df_mapping.set_index('join_key')['tm_id'].to_dict()
+        mapping_keys = list(mapping_dict.keys())
         fuzzy_rows = []
 
         for _, row in remaining.iterrows():
-            res_set = process.extractOne(row['join_key'], mapping_keys, scorer=fuzz.token_set_ratio)
-            res_sort = process.extractOne(row['join_key'], mapping_keys, scorer=fuzz.token_sort_ratio)
+            current_key = str(row['join_key'])
+            res_set = process.extractOne(current_key, mapping_keys, scorer=fuzz.token_set_ratio)
+            res_sort = process.extractOne(current_key, mapping_keys, scorer=fuzz.token_sort_ratio)
 
             best_res = None
             if res_set and res_sort:
-                # Si les deux scorers s'accordent sur le même candidat, on est plus confiant :
-                # on accepte le match avec un seuil légèrement abaissé
+                # Si accord parfait sur le candidat
                 if res_set[0] == res_sort[0]:
                     best_score = max(res_set[1], res_sort[1])
-                    if best_score >= score_min - 5:
-                        best_res = (res_set[0], best_score, res_set[2])
-                # Sinon, on garde le meilleur score mais avec le seuil normal (plus strict)
+                    if best_score >= (score_min - 5):
+                        best_res = (res_set[0], best_score)
+                # En cas de désaccord (ex: Igor Jesus / Igor Julio), arbitrage strict
                 else:
                     candidate = max([res_set, res_sort], key=lambda x: x[1])
-                    if candidate[1] >= score_min:
-                        best_res = candidate
-            elif res_set and res_set[1] >= score_min:
-                best_res = res_set
-            elif res_sort and res_sort[1] >= score_min:
-                best_res = res_sort
+                    strict_score = fuzz.ratio(current_key, candidate[0])
+                    if strict_score >= 75 and candidate[1] >= score_min:
+                        best_res = (candidate[0], candidate[1])
 
             if best_res:
-                tm_id = df_mapping[df_mapping['join_key'] == best_res[0]].iloc[0]['tm_id']
+                tm_id = mapping_dict[best_res[0]]
                 match_data = row.to_dict()
                 match_data['tm_id'] = tm_id
                 match_data['match_method'] = f'fuzzy_name({best_res[1]:.1f})'
@@ -529,7 +528,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
             remaining = remaining[~remaining['join_key'].isin(merge_2['join_key'])]
         
         print(f"[2] Fuzzy nom (mapping)     : {len(merge_2):>5} | restants : {len(remaining)}")
-
     # Assemblage et fusion finale
     if not results:
         print("Aucun match trouvé.")
@@ -538,40 +536,34 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     # Assemblage de tous les niveaux de résultats
     df_with_id = pd.concat(results, ignore_index=True)
 
-    # Préparation de df_tm pour la fusion
-    df_tm_final = df_tm.copy()
-
-    # garder uniquement les colonnes utiles
-    cols_to_keep = [
-        'player_id',
-        'valuation_season_year',
-        'market_value_in_eur',
-        'date',
-        'date_of_birth',
-        'name',
-        'join_key',
-        'join_key_full',
-        'dob_key',
-        'sub_position',
-        'position',
-        'foot',
-        'height_in_cm',
-        'contract_expiration_date'
+    # Extraction de l'identité unique du joueur (évite les NaN sur le 'name')
+    cols_identity = [
+        'player_id', 'name', 'date_of_birth', 'sub_position', 
+        'position', 'foot', 'height_in_cm', 'contract_expiration_date'
     ]
+    cols_id_existing = [c for c in cols_identity if c in df_tm.columns]
+    df_tm_identity = df_tm[cols_id_existing].drop_duplicates(subset=['player_id'])
 
-    df_tm_final = df_tm_final[cols_to_keep]
+    # Extraction des valeurs marchandes par saison
+    cols_values = ['player_id', 'valuation_season_year', 'market_value_in_eur', 'date']
+    cols_val_existing = [c for c in cols_values if c in df_tm.columns]
+    df_tm_values = df_tm[cols_val_existing].dropna(subset=['valuation_season_year']).copy()
+    df_tm_values['valuation_season_year'] = df_tm_values['valuation_season_year'].astype(int)
 
-    df_tm_final = df_tm_final.rename(columns={
-        'join_key': 'tm_join_key',
-        'join_key_full': 'tm_join_key_full',
-        'dob_key': 'tm_dob_key'
-    })
-
-    # Fusion finale pour récupérer les infos de Transfermarkt
+    # Fusion : Garantie de l'identité du joueur
     df_final = pd.merge(
         df_with_id,
-        df_tm_final,
-        left_on=['tm_id', 'season_year'],
+        df_tm_identity,
+        left_on='tm_id',
+        right_on='player_id',
+        how='left'
+    )
+
+    # Fusion : Ajout de la valeur de la saison de manière optionnelle
+    df_final = pd.merge(
+        df_final,
+        df_tm_values,
+        left_on=['player_id', 'season_year'],
         right_on=['player_id', 'valuation_season_year'],
         how='left'
     )
