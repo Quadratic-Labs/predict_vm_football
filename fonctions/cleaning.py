@@ -269,8 +269,9 @@ def fusionner_et_recalculer_mercato(df):
             aggregation_rules[col] = "mean"
 
         # Les autres colonnes numériques (Buts, Minutes, Passes...) (somme)
+        # lambda x: x.sum(min_count=1) permet de garder NaN si toutes les valeurs sont NaN
         elif col in cols_numeriques:
-            aggregation_rules[col] = "sum"
+            aggregation_rules[col] = lambda x: x.sum(min_count=1)
 
         # Les colonnes textuelles (team, league...) (dernier club en date)
         else:
@@ -367,9 +368,6 @@ def fusionner_et_recalculer_mercato(df):
     return df_fusion_mercato
 
 
-import pandas as pd
-
-
 def supprimer_colonnes_du_dataset(df, colonnes_a_supprimer):
     """Supprime une liste de colonnes spécifiée d'un DataFrame de manière sécurisée.
 
@@ -443,7 +441,11 @@ def nettoyer_valeurs_manquantes_ciblees(df):
     cols_NA = [
         "Penalty Kicks_Save%", "Performance_CS%", "Performance_Save%",
         "Standard_G/SoT", "Standard_G/Sh", "Standard_SoT%", "Per 90 Minutes_Gls",
-        "Per 90 Minutes_Ast", "Per 90 Minutes_G+A", "Standard_SoT/90", "Standard_Sh/90"
+        "Per 90 Minutes_Ast", "Per 90 Minutes_G+A", "Standard_SoT/90", "Standard_Sh/90",
+        "Performance_PKwon", "Performance_PKcon", "Performance_Saves", "Performance_GA90",
+        "Performance_GA", "Performance_SoTA", "Penalty Kicks_PKm", "Penalty Kicks_PKsv",
+        "Penalty Kicks_PKatt", "Performance_CS", "Penalty Kicks_PKA", "Performance_W",
+        "Performance_D", "Performance_L"
     ]
     # On ne filtre que les colonnes réellement présentes pour éviter les plantages
     cols_NA_presentes = [c for c in cols_NA if c in df_clean.columns]
