@@ -103,26 +103,14 @@ def download_github_dataset(repo_url, data_path):
 
 
 
-def download_football_data_datasets(annee_debut, annee_fin, leagues) :
+import pandas as pd
+
+def download_football_data_datasets(annee_debut, annee_fin, leagues):
     """
     Télécharge, agrège et archive localement les données de plusieurs ligues et saisons.
-
-    Cette fonction automatise la récupération des fichiers CSV distants pour une liste de 
-    championnats et de périodes définie. Elle centralise les données dans un seul dataframe 
-    en ajoutant une colonne de référence pour la ligue, puis exporte le résultat consolidé 
-    au format CSV pour une utilisation hors ligne.
-
-    arguments:
-        seasons (list): Liste des codes de saisons (ex: ["2324", "2425"]).
-        leagues (list): Liste des codes de championnats (ex: ["E0", "F1"]).
-
-    returns:
-        None: La fonction consolide les données en mémoire, les enregistre dans le dossier 
-            '/data' et confirme la fin de l'opération dans la console.
     """
     # Génération automatique de la liste des saisons
     seasons = [f"{str(annee)[2:]}{str(annee+1)[2:]}" for annee in range(annee_debut, annee_fin)]
-
 
     mapping = {
         "GB1": "E0",
@@ -137,18 +125,32 @@ def download_football_data_datasets(annee_debut, annee_fin, leagues) :
         for league in leagues
     ]
 
-
-    # On crée un dataframe vide
+    # On crée une liste vide pour stocker les DataFrames
     dfs = []
 
     # On boucle les données de chaque championnat pour obtenir toutes les données
     for league in leagues:
-        for season in seasons :
+        for season in seasons:
             url = f"https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
-            data = pd.read_csv(url)
-            data["league"] = league
-            dfs.append(data)
+            
+            try:
+                # 1. On lit le CSV normalement
+                data = pd.read_csv(url)
+                
+                # 2. OPTIMISATION : .copy() défragmente la mémoire du DataFrame 
+                # et évite le PerformanceWarning lors de l'ajout de la colonne
+                data = data.copy()
+                data["league"] = league
+                
+                dfs.append(data)
+            except Exception as e:
+                # Optionnel : Évite de faire planter tout le script si une saison/ligue n'existe pas sur le site
+                print(f"Impossible de télécharger {league} pour la saison {season} : {e}")
     
+    if not dfs:
+        print("Aucune donnée n'a pu être téléchargée.")
+        return
+
     # On concatène les données de tous les championnats
     full_data = pd.concat(dfs, ignore_index=True)
 
