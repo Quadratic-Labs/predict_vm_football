@@ -602,7 +602,8 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     cols_to_clean = ['join_key_clean', 'team_clean', 'name_clean', 'club_clean', 'current_club_name', 'player_id']
     df_with_id = df_with_id.drop(columns=[c for c in cols_to_clean if c in df_with_id.columns], errors='ignore')
     
-    cols_identity = ['player_id', 'name', 'date_of_birth', 'sub_position', 'position', 'foot', 'height_in_cm']
+
+    cols_identity = ['player_id', 'name', 'date_of_birth', 'sub_position', 'position', 'foot', 'height_in_cm', 'contract_expiration_date', 'market_value_in_eur']
     cols_id_existing = [c for c in cols_identity if c in df_tm.columns]
     df_tm_identity = df_tm[cols_id_existing].drop_duplicates(subset=['player_id'])
 
@@ -610,20 +611,13 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     df_with_id = df_with_id.drop(columns=cols_intersection, errors='ignore')
 
     df_final = pd.merge(df_with_id, df_tm_identity, left_on='tm_id', right_on='player_id', how='left')
-    
+    # ===================================
     if 'player_id' not in df_final.columns:
         df_final['player_id'] = df_final['tm_id']
     else:
         df_final['player_id'] = df_final['player_id'].fillna(df_final['tm_id'])
 
     df_final['name'] = df_final['name'].fillna(df_final['player'])
-
-    if 'valuation_season_year' in df_tm.columns and 'market_value_in_eur' in df_tm.columns:
-        cols_values = ['player_id', 'valuation_season_year', 'market_value_in_eur']
-        df_tm_values = df_tm[cols_values].dropna(subset=['valuation_season_year']).copy()
-        df_tm_values['valuation_season_year'] = df_tm_values['valuation_season_year'].astype(int)
-
-        df_final = pd.merge(df_final, df_tm_values, left_on=['player_id', 'season_year'], right_on=['player_id', 'valuation_season_year'], how='left')
 
     cols_inj_metrics = [col for col in df_blessures.columns if col.startswith("injury_") and col != "injury_season_year"]
     if cols_inj_metrics and 'injury_season_year' in df_blessures.columns:
