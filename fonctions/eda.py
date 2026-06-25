@@ -1676,7 +1676,7 @@ def analyser_variables_les_plus_explicatives(
             "Spécifique gardien",
         ),
         # Famille : Historique médical (Blessures)
-        "injury_nb_total": ("Nombre total de blessures", "Historique Médical"),
+        "injury_nb_total": ("Nombre total de blessures", "Historique médical"),
         "injury_days_total": (
             "Total des jours d'absence",
             "Historique médical",
@@ -1840,6 +1840,7 @@ def analyser_variables_les_plus_explicatives(
         "Succès équipe et collectif": "#a3be8c",  # Vert olive doux
         "Spécifique gardien": "#ebcb8b",  # Ocre doux
         "Historique médical": "#e5e9f0",  # Gris clair
+        "Non Classifié": "#d8dee9"
     }
 
     # Tracé des barres horizontales
