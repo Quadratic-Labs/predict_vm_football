@@ -3,7 +3,6 @@ import numpy as np
 import unicodedata
 import re
 from rapidfuzz import process, fuzz
-from fuzzywuzzy import fuzz, process
 from unidecode import unidecode
 
 
@@ -451,7 +450,9 @@ def clean_text(text):
     if pd.isna(text): return ""
     return unidecode(str(text)).lower().strip()
 
+
 def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_min=90):
+    # Nettoyage initial des colonnes dupliquées
     df_soccerdata = df_soccerdata.loc[:, ~df_soccerdata.columns.duplicated()].copy()
     df_mapping = df_mapping.loc[:, ~df_mapping.columns.duplicated()].copy()
     df_tm = df_tm.loc[:, ~df_tm.columns.duplicated()].copy()
@@ -459,174 +460,239 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
 
     results = []
     remaining = df_soccerdata.copy()
-    remaining['join_key_clean'] = remaining['join_key'].apply(clean_text)
+    
+    # Préparation des variables Soccerdata
+    remaining['name_clean'] = remaining['join_key'].apply(clean_text)
     remaining['team_clean'] = remaining['team'].apply(clean_text)
+    remaining['season_str'] = remaining['season_year'].astype(float).astype(int).astype(str)
     
-    # Match exact via le mapping
+    # LA CLÉ SOUVERAINE : JOUEUR + SAISON
+    remaining['player_season_key'] = remaining['name_clean'] + "_" + remaining['season_str']
 
+    # Préparation du mapping saisonnalisé
+
+    # On prend le mapping intemporel et on lui injecte TOUTES les saisons existantes de Soccerdata
     df_mapping_temp = df_mapping.copy()
-    df_mapping_temp['join_key_clean'] = df_mapping_temp['join_key'].apply(clean_text)
+    df_mapping_temp['name_clean'] = df_mapping_temp['join_key'].apply(lambda x: unidecode(str(x)).lower().strip())
+    df_mapping_unique = df_mapping_temp[['name_clean', 'tm_id']].drop_duplicates(subset=['name_clean'])
     
+    # On crée une grille (Nom x Saison) basée sur toutes les saisons jouées dans Soccerdata
+    saisons_existantes = remaining[['name_clean', 'season_str']].drop_duplicates()
+    df_mapping_saisonalise = pd.merge(saisons_existantes, df_mapping_unique, on='name_clean', how='inner')
+    df_mapping_saisonalise['player_season_key'] = df_mapping_saisonalise['name_clean'] + "_" + df_mapping_saisonalise['season_str']
+
+    # Match exact via le mapping (par joueur + saison)
+
     merge_1 = pd.merge(
-        remaining, 
-        df_mapping_temp[['join_key_clean', 'tm_id']].drop_duplicates(subset=['join_key_clean']), 
-        on='join_key_clean', 
+        remaining,
+        df_mapping_saisonalise[['player_season_key', 'tm_id']].drop_duplicates(subset=['player_season_key']),
+        on='player_season_key',
         how='inner'
     )
-    
     if not merge_1.empty:
-        merge_1['match_method'] = 'exact_name_mapping'
+        merge_1['match_method'] = 'exact_mapping_season'
         results.append(merge_1)
-        remaining = remaining[~remaining['join_key_clean'].isin(merge_1['join_key_clean'])]
+        remaining = remaining[~remaining['player_season_key'].isin(merge_1['player_season_key'])]
     
-    print(f"[1] Nom exact (mapping)     : {len(merge_1):>5} | restants : {len(remaining)}")
+    print(f"[1] Match exact Mapping (Par Saison) : {len(merge_1) if not merge_1.empty else 0:>5} | restants : {len(remaining)}")
 
-    # Fuzzy matching sur le mapping + validation Équipe
+    # Fuzzy matching via le mapping
 
-    if not remaining.empty and not df_mapping_temp.empty:
-        mapping_dict = df_mapping_temp.set_index('join_key_clean')['tm_id'].to_dict()
-        mapping_keys = [k for k in mapping_dict.keys() if k] # On filtre les clés vides
-        fuzzy_rows = []
-
-        if mapping_keys:
-            for _, row in remaining.iterrows():
-                current_key = row['join_key_clean']
-                if not current_key:
-                    continue
-                
-                res_set = process.extractOne(current_key, mapping_keys, scorer=fuzz.token_set_ratio)
-                res_sort = process.extractOne(current_key, mapping_keys, scorer=fuzz.token_sort_ratio)
-
-                best_res = None
-
-                if res_set and res_sort and isinstance(res_set, tuple) and isinstance(res_sort, tuple):
-                    if res_set[0] == res_sort[0]:
-                        best_score = max(res_set[1], res_sort[1])
-                        if best_score >= (score_min - 5):
-                            best_res = (res_set[0], best_score)
-                    else:
-                        candidate, score_sort = res_sort[0], res_sort[1]
-                        if score_sort >= 75: 
-                            best_res = (candidate, score_sort)
-
-                if best_res:
-                    match_data = row.to_dict()
-                    match_data['tm_id'] = mapping_dict[best_res[0]]
-                    match_data['match_method'] = f'fuzzy_mapping({best_res[1]:.1f})'
-                    
-                    if best_res[1] < 85: 
-                        if fuzz.ratio(current_key, best_res[0]) < 60:
-                            continue 
-                            
-                    fuzzy_rows.append(match_data)
-
-        if fuzzy_rows:
-            merge_2 = pd.DataFrame(fuzzy_rows)
-            results.append(merge_2)
-            remaining = remaining[~remaining['join_key_clean'].isin(merge_2['join_key_clean'])]
+    if not remaining.empty and not df_mapping_saisonalise.empty:
+        fuzzy_mapping_rows = []
         
-        print(f"[2] Fuzzy nom (mapping)     : {len(fuzzy_rows):>5} | restants : {len(remaining)}")
+        # Groupement du mapping par saison
+        mapping_by_season = {s: grp.set_index('name_clean')['tm_id'].to_dict() 
+                             for s, grp in df_mapping_saisonalise.groupby('season_str')}
 
-    # Match sur la base Transfermarkt
+        for _, row in remaining.iterrows():
+            saison_sc = row['season_str']
+            current_name = row['name_clean']
+            
+            if saison_sc not in mapping_by_season:
+                continue
+                
+            season_dict = mapping_by_season[saison_sc]
+            mapping_keys = [k for k in season_dict.keys() if k]
+            
+            if not mapping_keys:
+                continue
+
+            res_set  = process.extractOne(current_name, mapping_keys, scorer=fuzz.token_set_ratio)
+            res_sort = process.extractOne(current_name, mapping_keys, scorer=fuzz.token_sort_ratio)
+            
+            best_res = None
+            if res_set and res_sort:
+                if res_set[1] >= (score_min - 5):
+                    best_res = (res_set[0], res_set[1])
+                elif res_sort[1] >= 75:
+                    best_res = (res_sort[0], res_sort[1])
+
+            if best_res:
+                match_data = row.to_dict()
+                match_data['tm_id'] = season_dict[best_res[0]]
+                match_data['match_method'] = f'fuzzy_mapping_season({best_res[1]:.1f})'
+                fuzzy_mapping_rows.append(match_data)
+
+        if fuzzy_mapping_rows:
+            merge_2 = pd.DataFrame(fuzzy_mapping_rows)
+            results.append(merge_2)
+            remaining = remaining[~remaining['player_season_key'].isin(merge_2['player_season_key'])]
+
+    print(f"[2] Match fuzzy Mapping (Par Saison)  : {len(fuzzy_mapping_rows) if 'fuzzy_mapping_rows' in locals() else 0:>5} | restants : {len(remaining)}")
+
+    # Match direct sur la base Transfermarkt
 
     if not remaining.empty and not df_tm.empty:
-        cols_to_extract = ['name', 'player_id']
-        if 'current_club_name' in df_tm.columns:
+        df_tm_temp = df_tm.copy()
+        
+        # Alignement de la variable saison Transfermarkt (valuation_season_year)
+        df_tm_temp['season_year_tm'] = df_tm_temp['valuation_season_year'].astype(float).astype(int).astype(str)
+
+        cols_to_extract = ['name', 'player_id', 'season_year_tm']
+        if 'current_club_name' in df_tm_temp.columns:
             cols_to_extract.append('current_club_name')
-            
-        df_tm_unique = df_tm[cols_to_extract].drop_duplicates(subset=['name']).copy()
+
+        df_tm_unique = df_tm_temp[cols_to_extract].copy()
         df_tm_unique['name_clean'] = df_tm_unique['name'].apply(clean_text)
+        df_tm_unique['player_season_key'] = df_tm_unique['name_clean'] + "_" + df_tm_unique['season_year_tm']
+        
         if 'current_club_name' in df_tm_unique.columns:
             df_tm_unique['club_clean'] = df_tm_unique['current_club_name'].apply(clean_text)
-        
-        df_tm_unique = df_tm_unique.drop_duplicates(subset=['name_clean'])
-        
-        # Match exact direct
+
+        # Match exact direct (Nom + Saison)
         merge_3_exact = pd.merge(
             remaining,
-            df_tm_unique,
-            left_on='join_key_clean',
-            right_on='name_clean',
+            df_tm_unique.drop_duplicates(subset=['player_season_key']),
+            on='player_season_key',
             how='inner'
         )
-        
+
         if not merge_3_exact.empty:
             merge_3_exact['tm_id'] = merge_3_exact['player_id']
-            merge_3_exact['match_method'] = 'exact_direct_tm'
+            merge_3_exact['match_method'] = 'exact_direct_tm_season'
             results.append(merge_3_exact)
-            remaining = remaining[~remaining['join_key_clean'].isin(merge_3_exact['join_key_clean'])]
-            print(f"[3.1] Match direct TM (Exact) : {len(merge_3_exact):>5} | restants : {len(remaining)}")
+            remaining = remaining[~remaining['player_season_key'].isin(merge_3_exact['player_season_key'])]
+        
+        print(f"[3.1] Match direct TM (Exact Saison) : {len(merge_3_exact):>5} | restants : {len(remaining)}")
 
         # Match fuzzy direct
         if not remaining.empty:
-            tm_dict = df_tm_unique.set_index('name_clean').to_dict(orient='index')
-            tm_keys = [k for k in tm_dict.keys() if k] # On filtre les clés vides
             tm_fuzzy_rows = []
+            
+            tm_by_season = {s: grp.drop_duplicates(subset=['name_clean']).set_index('name_clean').to_dict(orient='index')
+                            for s, grp in df_tm_unique.groupby('season_year_tm') if pd.notna(s)}
 
-            if tm_keys:
-                for _, row in remaining.iterrows():
-                    current_key = row['join_key_clean']
-                    current_team = row['team_clean']
-                    if not current_key:
-                        continue
+            synonymes_clubs = {
+                "gladbach": "borussia monchengladbach",
+                "stade rennais": "rennes",
+                "paris sg": "paris saint germain"
+            }
+
+            for _, row in remaining.iterrows():
+                saison_sc = row['season_str']
+                current_name = row['name_clean']
+                current_team = row['team_clean']
+                
+                if saison_sc not in tm_by_season:
+                    continue
                     
-                    res = process.extractOne(current_key, tm_keys, scorer=fuzz.token_sort_ratio)
+                season_tm_dict = tm_by_season[saison_sc]
+                tm_keys = [k for k in season_tm_dict.keys() if k]
+
+                if not tm_keys:
+                    continue
+
+                try:
+                    res_set  = process.extractOne(current_name, tm_keys, scorer=fuzz.token_set_ratio)
+                    res_sort = process.extractOne(current_name, tm_keys, scorer=fuzz.token_sort_ratio)
+                except Exception:
+                    continue
+
+                res = res_set if res_set and res_sort and res_set[1] >= res_sort[1] else res_sort
+                if not res or res[1] < 50:
+                    continue
+
+                meta_tm = season_tm_dict.get(res[0])
+                score_nom_retenu = res[1]
+                
+                if 'club_clean' in meta_tm:
+                    score_club = fuzz.token_set_ratio(current_team, meta_tm['club_clean'])
                     
-                    # PROTECTION SÉCURISÉE DU NONETYPE ICI AUSSI
-                    if res and isinstance(res, tuple) and len(res) >= 2:
-                        meta_tm = tm_dict[res[0]]
-                        
-                        if 'club_clean' in meta_tm:
-                            score_club = fuzz.token_set_ratio(current_team, meta_tm['club_clean'])
-                            if score_club < 50 and res[1] < 95:
-                                continue
-                        
-                        match_data = row.to_dict()
-                        match_data['tm_id'] = meta_tm['player_id']
-                        match_data['match_method'] = f'fuzzy_direct_tm({res[1]:.1f})'
-                        tm_fuzzy_rows.append(match_data)
+                    for k, v in synonymes_clubs.items():
+                        if (k in current_team and v in meta_tm['club_clean']) or (k in meta_tm['club_clean'] and v in current_team):
+                            score_club = max(score_club, 90)
+
+                    if current_team in meta_tm['club_clean'] or meta_tm['club_clean'] in current_team:
+                        if len(current_team) > 3 and len(meta_tm['club_clean']) > 3:
+                            score_club = max(score_club, 85)
+
+                    if current_name == res[0]:  
+                        pass
+                    elif score_nom_retenu >= 95:
+                        pass
+                    elif score_nom_retenu >= 75:
+                        if score_club < 65: continue
+                    else:
+                        if score_club < 80: continue
+
+                match_data = row.to_dict()
+                match_data['tm_id'] = meta_tm['player_id']
+                match_data['match_method'] = f'fuzzy_direct_tm_season({score_nom_retenu:.1f})'
+                tm_fuzzy_rows.append(match_data)
 
             if tm_fuzzy_rows:
                 merge_3_fuzzy = pd.DataFrame(tm_fuzzy_rows)
                 results.append(merge_3_fuzzy)
-                remaining = remaining[~remaining['join_key_clean'].isin(merge_3_fuzzy['join_key_clean'])]
-            print(f"[3.2] Match direct TM (Fuzzy) : {len(tm_fuzzy_rows):>5} | restants : {len(remaining)}")
+                remaining = remaining[~remaining['player_season_key'].isin(merge_3_fuzzy['player_season_key'])]
+            
+            print(f"[3.2] Match direct TM (Fuzzy Saison)  : {len(tm_fuzzy_rows):>5} | restants : {len(remaining)}")
 
-    # Nettoyage
-    remaining = remaining.drop(columns=['join_key_clean', 'team_clean'], errors='ignore')
-    if not results: return pd.DataFrame(), remaining
+    # Nettoyage et Assemblage Final
 
-    # Assemblage final
+    remaining = remaining.drop(columns=['player_season_key', 'name_clean', 'team_clean', 'season_str'], errors='ignore')
+    if not results: 
+        return pd.DataFrame(), remaining
+
     df_with_id = pd.concat(results, ignore_index=True)
     
-    cols_to_clean = ['join_key_clean', 'team_clean', 'name_clean', 'club_clean', 'current_club_name', 'player_id']
-    df_with_id = df_with_id.drop(columns=[c for c in cols_to_clean if c in df_with_id.columns], errors='ignore')
-    
+    cols_to_drop = ['player_season_key', 'name_clean', 'team_clean', 'season_str', 'club_clean', 'current_club_name', 'player_id', 'season_year_tm']
+    df_with_id = df_with_id.drop(columns=[c for c in cols_to_drop if c in df_with_id.columns], errors='ignore')
 
-    cols_identity = ['player_id', 'name', 'date_of_birth', 'sub_position', 'position', 'foot', 'height_in_cm', 'contract_expiration_date', 'market_value_in_eur']
+
+    cols_identity = ['player_id', 'name', 'date_of_birth', 'sub_position', 'position', 'foot', 'height_in_cm', 'contract_expiration_date', 'market_value_in_eur', 'valuation_season_year']
     cols_id_existing = [c for c in cols_identity if c in df_tm.columns]
-    df_tm_identity = df_tm[cols_id_existing].drop_duplicates(subset=['player_id'])
+    
+    # Table de correspondance Joueur + Saison brute de Transfermarkt
+    df_tm_identity = df_tm[cols_id_existing].copy()
+    df_tm_identity['season_match_str'] = df_tm_identity['valuation_season_year'].astype(float).astype(int).astype(str)
+    
+    # Clé de jointure finale
+    df_with_id['season_match_str'] = df_with_id['season_year'].astype(float).astype(int).astype(str)
 
-    cols_intersection = [c for c in df_tm_identity.columns if c in df_with_id.columns and c != 'player_id']
-    df_with_id = df_with_id.drop(columns=cols_intersection, errors='ignore')
-
-    df_final = pd.merge(df_with_id, df_tm_identity, left_on='tm_id', right_on='player_id', how='left')
-    # ===================================
-    if 'player_id' not in df_final.columns:
-        df_final['player_id'] = df_final['tm_id']
+    # Le merge final
+    df_final = pd.merge(
+        df_with_id, 
+        df_tm_identity, 
+        left_on=['tm_id', 'season_match_str'], 
+        right_on=['player_id', 'season_match_str'], 
+        how='left'
+    )
+    
+    if 'name' in df_final.columns:
+        df_final['name'] = df_final['name'].fillna(df_final['player'])
     else:
-        df_final['player_id'] = df_final['player_id'].fillna(df_final['tm_id'])
+        df_final['name'] = df_final['player']
 
-    df_final['name'] = df_final['name'].fillna(df_final['player'])
-
+    # Ajout des blessures (tm_id + season_year)
     cols_inj_metrics = [col for col in df_blessures.columns if col.startswith("injury_") and col != "injury_season_year"]
     if cols_inj_metrics and 'injury_season_year' in df_blessures.columns:
-        cols_inj_to_keep = ["player_id", "injury_season_year"] + cols_inj_metrics
-        df_blessures_final = df_blessures[cols_inj_to_keep]
-
-        df_final = pd.merge(df_final, df_blessures_final, left_on=["player_id", "season_year"], right_on=["player_id", "injury_season_year"], how="left")
+        df_blessures_final = df_blessures[["player_id", "injury_season_year"] + cols_inj_metrics]
+        df_final = pd.merge(df_final, df_blessures_final, left_on=["tm_id", "season_year"], right_on=["player_id", "injury_season_year"], how="left")
         df_final[cols_inj_metrics] = df_final[cols_inj_metrics].fillna(0)
 
-    df_final = df_final.drop(columns=["injury_season_year", "valuation_season_year", "player_id_x", "player_id_y"], errors="ignore")
+    # Suppression propre des scories de jointure
+    df_final = df_final.drop(columns=["injury_season_year", "player_id_x", "player_id_y", "player_id", "season_match_str",
+                                      "name_x", "name_y", "name_clean_x", "name_clean_y"], errors="ignore")
 
     return df_final, remaining
