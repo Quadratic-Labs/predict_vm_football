@@ -437,6 +437,15 @@ def nettoyer_valeurs_manquantes_ciblees(df):
     # Copie locale pour éviter les warnings "SettingWithCopy"
     df_clean = df.copy()
 
+    if "market_value_in_eur" in df_clean.columns:
+        nb_avant = len(df_clean)
+        # dropna supprime les lignes où la colonne spécifiée contient un NaN
+        df_clean = df_clean.dropna(subset=["market_value_in_eur"])
+        nb_apres = len(df_clean)
+        print(f" -> {nb_avant - nb_apres} lignes supprimées car 'market_value_in_eur' était manquant.")
+    else:
+        print(" -> Attention : la colonne 'market_value_in_eur' est introuvable.")
+
     # Remplacement des NA par des 0 dans les colonnes de performance spécifiques
     cols_NA = [
         "Penalty Kicks_Save%", "Performance_CS%", "Performance_Save%",
