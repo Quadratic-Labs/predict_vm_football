@@ -6,6 +6,8 @@
 *.json
 *.feather
 *.png
+*.tsv
+*.tfevents
 .env
 !mapping_fbref_tm.csv
 !dataset_blessures.csv
