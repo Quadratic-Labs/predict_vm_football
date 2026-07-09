@@ -130,29 +130,49 @@ def audit_key_columns_missing(df, key_cols, title="Couverture des variables clé
 
 
 def audit_coverage_by_season(df, title="Couverture par saison et ligue"):
-    """
-    Affiche le nombre de joueurs par saison et par ligue pour vérifier la couverture temporelle.
+    """Affiche le nombre de joueurs par saison et par ligue pour vérifier la couverture temporelle.
 
-    arguments:
-        df: DataFrame contenant les colonnes 'season' et 'league'.
-        title (str): Titre du graphique.
-
-    returns:
-        pd.DataFrame: Table de couverture (saisons × ligues).
+    Les saisons sont harmonisées au format 'YYYY/YYYY'.
     """
     df_plot = df.copy()
-    df_plot['league'] = df_plot['league'].map(LEAGUE_LABELS).fillna(df_plot['league'])
+    df_plot["league"] = (
+        df_plot["league"].map(LEAGUE_LABELS).fillna(df_plot["league"])
+    )
 
-    coverage = df_plot.groupby(['season', 'league']).size().unstack(fill_value=0)
+    # --- CORRECTION : Table de correspondance unifiée en chaînes de caractères (String) ---
+    season_mapping = {
+        "2021": "2020/2021",
+        "2122": "2021/2022",
+        "2223": "2022/2023",
+        "2324": "2023/2024",
+        "2425": "2024/2025",
+        "2526": "2025/2026",
+    }
+
+    # 1. On force d'abord TOUTE la colonne en type 'str' pour éviter le mélange int/str
+    df_plot["season"] = df_plot["season"].astype(str).str.strip()
+
+    # 2. On applique le mapping
+    df_plot["season"] = df_plot["season"].map(season_mapping).fillna(df_plot["season"])
+    # ------------------------------------------------------------------------------------
+
+    coverage = (
+        df_plot.groupby(["season", "league"]).size().unstack(fill_value=0)
+    )
+
+    # Le tri fonctionnera parfaitement maintenant car l'index ne contient que des chaînes
+    coverage = coverage.sort_index()
 
     fig, ax = plt.subplots(figsize=(12, 5))
 
     colors = sns.color_palette("Blues_d", n_colors=len(coverage.columns))
-    coverage.plot(kind='bar', ax=ax, color=colors, edgecolor='white', linewidth=0.5)
+    coverage.plot(
+        kind="bar", ax=ax, color=colors, edgecolor="white", linewidth=0.5
+    )
     ax.set_title(title, fontsize=13)
     ax.set_xlabel("Saison")
     ax.set_ylabel("Nombre de joueurs")
-    ax.legend(title="Ligue", bbox_to_anchor=(1.01, 1), loc='upper left')
+    ax.legend(title="Ligue", bbox_to_anchor=(1.01, 1), loc="upper left")
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.show()
