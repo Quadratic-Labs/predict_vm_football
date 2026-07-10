@@ -702,9 +702,16 @@ def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
     print(stats_mediane.to_string())
 
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+
 def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
     """Génère une heatmap croisant les championnats (colonnes league_*) et les postes (position)
     pour afficher la valeur marchande médiane (en M€) de chaque segment.
+    Noms des ligues configurés à l'horizontale.
     """
     print("Analyse croisée : VM médiane par championnat et par poste")
 
@@ -723,42 +730,45 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
         print("Annulé : Aucune colonne commençant par 'league_' n'a été trouvée.")
         return
 
-    pos_order = ["Goalkeeper", "Defender", "Midfield", "Attack"]
+    # --- CONFIGURATION ET TRADUCTION DES POSTES EN FRANÇAIS ---
+    pos_order_en = ["Goalkeeper", "Defender", "Midfield", "Attack"]
     
-    # Filtrage des postes valides à l'avance
-    df_filtrer = df[df["position"].isin(pos_order)]
+    mapping_postes = {
+        "Goalkeeper": "Gardien",
+        "Defender": "Défenseur",
+        "Midfield": "Milieu",
+        "Attack": "Attaquant"
+    }
+    pos_order_fr = ["Gardien", "Défenseur", "Milieu", "Attaquant"]
+    
+    df_filtrer = df[df["position"].isin(pos_order_en)].copy()
     if df_filtrer.empty:
         print("Annulé : Aucun joueur trouvé pour les postes (Goalkeeper, Defender, Midfield, Attack).")
         return
 
+    df_filtrer["position"] = df_filtrer["position"].map(mapping_postes)
+    # -----------------------------------------------------------
+
     rows_pivot = {}
 
     for col in cols_league:
-        # On extrait le nom propre de la ligue (ex: "league_ESP-La Liga" -> "ESP-La Liga")
         nom_ligue = col.replace("league_", "")
         
-        # On filtre le DataFrame pour n'avoir que les joueurs de cette ligue spécifique
+        # Nettoyage des préfixes de pays (ex: "ENG-Premier League" -> "Premier League")
+        if "-" in nom_ligue:
+            nom_ligue = nom_ligue.split("-")[-1]
+        
         df_ligue = df_filtrer[df_filtrer[col] == 1]
-        
-        # On calcule la médiane de la cible par poste pour cette ligue
-        # .reindex(pos_order) garantit que tous les postes existent (quitte à mettre du NaN)
-        medians_par_poste = df_ligue.groupby("position")[target_col].median().reindex(pos_order)
-        
-        # On stocke le résultat (converti en Millions d'euros)
+        medians_par_poste = df_ligue.groupby("position")[target_col].median().reindex(pos_order_fr)
         rows_pivot[nom_ligue] = medians_par_poste / 1e6
 
-    # Création du DataFrame final pour la heatmap
     pivot = pd.DataFrame.from_dict(rows_pivot, orient='index')
-
-    # Sécurité : Si un championnat n'a aucun joueur à un poste donné, on remplace le NaN par 0
     pivot = pivot.fillna(0)
 
-    # Si toutes les valeurs du pivot sont à 0, on arrête pour éviter un graphique vide
     if pivot.sum().sum() == 0:
         print("Annulé : Le tableau croisé ne contient que des zéros ou des données vides.")
         return
 
-    # Optionnel : Trier les lignes (championnats) par la valeur médiane globale pour un plus joli visuel
     pivot = pivot.loc[pivot.median(axis=1).sort_values(ascending=False).index]
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -770,12 +780,20 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
         cmap="YlOrRd",
         linewidths=0.5, 
         ax=ax, 
-        cbar_kws={"label": f"VM médiane (M€)"}
+        cbar_kws={"label": "VM médiane (M€)"}
     )
     
-    ax.set_title(f"{target_col} médiane (M€) par championnat × poste", fontsize=13, fontweight="bold")
+    # --- ADAPTATION DYNAMIQUE DU TITRE ---
+    nom_cible_titre = "Valeur Marchande" if target_col == "market_value_in_eur" else target_col
+    ax.set_title(f"{nom_cible_titre} médiane (M€) par championnat × poste", fontsize=13, fontweight="bold")
+    
     ax.set_xlabel("Poste")
     ax.set_ylabel("Championnat")
+
+    # --- FORCER LES LIGUES À L'HORIZONTALE (AXE Y) ---
+    plt.yticks(rotation=0) 
+    # --------------------------------------------------
+    
     plt.tight_layout()
 
     # Gestion de la sauvegarde
@@ -787,7 +805,6 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
         plt.savefig(chemin_fichier)
         print(f"\nHeatmap sauvegardée sous : {chemin_fichier}")
 
-    # Affichage
     plt.show()
 
 
@@ -871,10 +888,10 @@ def analyser_distribution_violin_league(df, target_col, dossier_sauvegarde=None,
     plt.show()
 
 
+
 def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
     """Filtre les joueurs d'élite (>= 100M€), affiche leur récapitulatif textuel
-
-    et compare leur profil (Âge, xG, Blessures) avec le reste des joueurs via des boxplots.
+    et compare leur profil (Buts, xG, G+A par 90 min) avec le reste des joueurs via des boxplots.
     """
     print(f"Analyse des outliers et profils Spécifiques (cible : {target_col})")
 
@@ -897,8 +914,7 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
         return
 
     # Extraction et affichage du tableau récapitulatif du top 20
-    id_cols_show = ["player", "position","age",
-                    target_col, "xg", "Performance_Gls", "injury_days_total"]
+    id_cols_show = ["player", "position", target_col, "Performance_Gls", "xg", "Per 90 Minutes_G+A"]
     id_cols_show = [c for c in id_cols_show if c in df_top.columns]
     
     top_display = df_top[id_cols_show].sort_values(target_col, ascending=False).head(20)
@@ -915,11 +931,11 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
     df_local = df.copy()
     df_local["group"] = np.where(df_local[target_col] >= seuil_elite, "≥100M€", "<100M€")
 
-    # Liste des features à comparer
+    # Liste des features à comparer (Nom de la colonne, Label d'affichage)
     features_analyse = [
-        ("age", "Âge"),
+        ("Performance_Gls", "Nombre de buts"),
         ("xg", "xG"),
-        ("injury_days_total", "Jours blessés"),
+        ("Per 90 Minutes_G+A", "Buts + Passes Déc. / 90 min"),
     ]
 
     for ax, (feat, label) in zip(axes, features_analyse):
@@ -1025,10 +1041,16 @@ def verifier_coherence_jours_blessures(df):
         print("  Aucune donnée comparable disponible (valeurs manquantes ou non numériques).")
 
 
-def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", dossier_sauvegarde=None, couleurs_dict=None):
-    """Calcule l'évolution de la valeur marchande (médiane et moyenne) ainsi que le volume de joueurs
 
-    par saison, affiche le bilan textuel et génère les graphiques d'évolution.
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", dossier_sauvegarde=None, couleurs_dict=None):
+    """Calcule l'évolution de la valeur marchande (médiane et moyenne) par saison,
+    affiche le bilan textuel et génère l'unique graphique d'évolution des courbes.
+    Noms des années nettoyés sur l'axe des abscisses.
     """
     print(f"Analyse de l'évolution temporelle par Saison (cible : {target_col})")
 
@@ -1042,10 +1064,9 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
 
     # Gestion des couleurs par défaut
     if couleurs_dict is None:
-        couleurs_dict = {"blue": "#61AFEF", "red": "#E06C75", "green": "#98C379"}
+        couleurs_dict = {"blue": "#61AFEF", "red": "#E06C75"}
 
     # Agrégation et calcul des statistiques par saison
-    # On filtre les valeurs manquantes sur la cible pour avoir un décompte (count) précis des joueurs évalués
     df_clean = df.dropna(subset=[target_col])
     
     if df_clean.empty:
@@ -1058,37 +1079,40 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
         count="count"
     ).copy()
 
-    # Conversion des valeurs monétaires en Millions d'Euros (uniquement sur la médiane et la moyenne)
+    # Conversion des valeurs monétaires en Millions d'Euros
     vm_season["mediane"] = vm_season["mediane"] / 1e6
     vm_season["moyenne"] = vm_season["moyenne"] / 1e6
 
-    # Renommage explicite des colonnes pour l'affichage et les graphiques
+    # Renommage explicite des colonnes pour l'affichage
     vm_season.columns = ["Médiane (M€)", "Moyenne (M€)", "Nb joueurs"]
     
-    # Tri par l'index (saisons chronologiques) pour s'assurer du bon sens des lignes de tendance
+    # Tri par l'index (saisons chronologiques)
     vm_season = vm_season.sort_index()
 
     # Affichage du bilan textuel
     print(f"\nÉvolution VM par saison :")
     print(vm_season.to_string())
 
-    # Configuration de la figure (1 ligne, 2 colonnes)
-    fig, axes = plt.subplots(1, 2, figsize=(16, 5))
-    fig.suptitle("Évolution temporelle", fontsize=13, fontweight="bold")
+    # --- CONFIGURATION GRAPHIQUE ---
+    plt.figure(figsize=(10, 6))
+    
+    # TRÈS IMPORTANT : Conversion des années en entier puis en texte (ex: 2020.0 -> 2020 -> "2020")
+    # Cela empêche matplotlib d'inventer des demi-années comme 2020.5
+    seasons_clean = [str(int(s)) for s in vm_season.index]
 
-    seasons = vm_season.index.tolist()
-
-    # Graphique 1 : Courbes d'évolution (Médiane vs Moyenne)
-    axes[0].plot(
-        seasons, 
+    # Courbe de la Médiane
+    plt.plot(
+        seasons_clean, 
         vm_season["Médiane (M€)"], 
         marker="o", 
         color=couleurs_dict.get("blue", "#61AFEF"),  
         label="Médiane", 
         lw=2
     )
-    axes[0].plot(
-        seasons, 
+    
+    # Courbe de la Moyenne
+    plt.plot(
+        seasons_clean, 
         vm_season["Moyenne (M€)"], 
         marker="s", 
         color=couleurs_dict.get("red", "#E06C75"),   
@@ -1096,22 +1120,16 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
         lw=2, 
         linestyle="--"
     )
-    axes[0].set_title(f"Moyenne et Médiane de {target_col} par saison")
-    axes[0].set_ylabel("VM (M€)")
-    axes[0].legend()
-    plt.setp(axes[0].xaxis.get_majorticklabels(), rotation=30, ha="right")
+    
+    # Adaptation du nom pour le titre
+    nom_cible_titre = "Valeur Marchande" if target_col == "market_value_in_eur" else target_col
 
-    # Graphique 2 : Histogramme du volume de joueurs par saison
-    axes[1].bar(
-        seasons, 
-        vm_season["Nb joueurs"], 
-        color=couleurs_dict.get("green", "#98C379"), 
-        edgecolor="white"
-    )
-    axes[1].set_title("Nombre de joueurs par saison")
-    axes[1].set_ylabel("Count")
-    plt.setp(axes[1].xaxis.get_majorticklabels(), rotation=30, ha="right")
-
+    plt.title(f"Évolution temporelle : Moyenne et Médiane de {nom_cible_titre} par saison", fontsize=13, fontweight="bold")
+    plt.xlabel("Saison")
+    plt.ylabel("VM (M€)")
+    plt.legend()
+    plt.xticks(rotation=0, ha="center") # Rotation à 0 car les années courtes n'ont plus besoin d'être inclinées
+    
     plt.tight_layout()
 
     # Gestion de la sauvegarde
@@ -1126,7 +1144,6 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
     # Affichage
     plt.show()
     
-    # Optionnel : Retourne le tableau croisé récapitulatif
     return vm_season
 
 
@@ -1246,11 +1263,15 @@ def analyser_cycle_vie_financier(df):
     # On retourne le DataFrame nettoyé au cas où tu en as besoin pour la suite
     return df_clean
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.ticker import FuncFormatter
 
 def analyser_distribution_prix_ligue_poste(df):
-    """Reconstitue la colonne ligue à partir du One-Hot, trie les championnats
-
-    par valeur marchande médiane décroissante et affiche le Boxplot global.
+    """Reconstitue la colonne ligue à partir du One-Hot, nettoie les noms de championnats,
+    trie les championnats par valeur marchande médiane décroissante et affiche le Boxplot global (Échelle Log).
     """
     print("Démarrage de l'analyse de distribution des prix...")
 
@@ -1268,10 +1289,25 @@ def analyser_distribution_prix_ligue_poste(df):
     # Création d'un DataFrame temporaire de travail pour le plot
     df_plot = df.copy()
 
-    # Reconstitution de la colonne 'league' textuelle à partir du One-Hot
+    # --- TRADUCTION DES POSTES EN FRANÇAIS ---
+    mapping_postes = {
+        "Attack": "Attaquant",
+        "Midfield": "Milieu",
+        "Defender": "Défenseur",
+        "Goalkeeper": "Gardien"
+    }
+    df_plot["position"] = df_plot["position"].map(mapping_postes).fillna(df_plot["position"])
+
+    # --- RECONSTITUTION ET NETTOYAGE DES LIGUES ---
+    # Reconstitution textuelle
     df_plot["league"] = (
         df_plot[cols_league].idxmax(axis=1).str.replace("league_", "")
     )
+    
+    # Nettoyage des préfixes (ex: 'ENG-Premier League' devient 'Premier League')
+    # On sépare au niveau du tiret '-' et on ne garde que la deuxième partie
+    df_plot["league"] = df_plot["league"].apply(lambda x: x.split("-")[-1] if "-" in x else x)
+    # -----------------------------------------------
 
     # Tri des championnats par valeur marchande médiane décroissante
     league_order = (
@@ -1292,7 +1328,7 @@ def analyser_distribution_prix_ligue_poste(df):
         x="league",
         y="market_value_in_eur",
         hue="position",
-        hue_order=["Attack", "Midfield", "Defender", "Goalkeeper"],
+        hue_order=["Attaquant", "Milieu", "Défenseur", "Gardien"],
         order=league_order,
         palette="Set2",
     )
@@ -1300,14 +1336,18 @@ def analyser_distribution_prix_ligue_poste(df):
     # Échelle logarithmique indispensable pour écraser la dispersion des prix
     plt.yscale("log")
 
+    # --- CODE DE FORMATAGE EN MILLIONS (M€) ---
+    formatter_millions = FuncFormatter(lambda y, pos: f"{y / 1e6:g}")
+    plt.gca().yaxis.set_major_formatter(formatter_millions)
+
     plt.title(
         "Distribution des prix par Championnat et Poste (4 Catégories Majeures)",
         fontsize=14,
         fontweight="bold",
     )
     plt.xlabel("Championnat")
-    plt.ylabel("Valeur Marchande (EUR - Échelle Log)")
-    plt.xticks(rotation=30, ha="right")
+    plt.ylabel("Valeur Marchande (M€)")
+    plt.xticks(rotation=15, ha="right")  # Rotation réduite à 15° car les noms sont plus courts et plus propres
 
     # Placement propre de la légende à l'extérieur pour éviter l'enchevêtrement
     plt.legend(
@@ -1319,6 +1359,7 @@ def analyser_distribution_prix_ligue_poste(df):
 
     print()
     print("Boxplot généré avec succès.")
+
 
 
 def detecter_top_colinearites(df, top_n=15):
