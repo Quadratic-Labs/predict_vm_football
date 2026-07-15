@@ -454,14 +454,6 @@ def clean_text(text):
 
 def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_min=90):
 
-    import pandas as pd
-    from unidecode import unidecode
-    from rapidfuzz import process, fuzz
-
-
-    # ==========================================================
-    # NETTOYAGE INITIAL
-    # ==========================================================
 
     df_soccerdata = df_soccerdata.loc[:, ~df_soccerdata.columns.duplicated()].copy()
     df_mapping    = df_mapping.loc[:, ~df_mapping.columns.duplicated()].copy()
@@ -471,10 +463,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     results   = []
     remaining = df_soccerdata.copy()
 
-
-    # ==========================================================
-    # PREPARATION SOCCERDATA
-    # ==========================================================
 
     remaining['name_clean'] = (
         remaining['join_key']
@@ -500,9 +488,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     )
 
 
-    # ==========================================================
-    # MATCHING VIA MAPPING TRANSFERMARKT
-    # ==========================================================
 
     df_mapping_temp = df_mapping.copy()
 
@@ -535,9 +520,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     )
 
 
-    # ==========================================================
-    # MATCH EXACT JOUEUR + SAISON
-    # ==========================================================
 
     merge_1 = pd.merge(
         remaining,
@@ -556,10 +538,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
 
     print(f"[1] Match exact Mapping saison : {len(merge_1)} | Restants : {len(remaining)}")
 
-
-    # ==========================================================
-    # MATCH FUZZY MAPPING SAISON
-    # ==========================================================
 
     fuzzy_mapping_rows = []
 
@@ -609,9 +587,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     print(f"[2] Match fuzzy Mapping saison : {len(fuzzy_mapping_rows)} | Restants : {len(remaining)}")
 
 
-    # ==========================================================
-    # MATCH DIRECT TRANSFERMARKT
-    # ==========================================================
 
     if not remaining.empty and not df_tm.empty:
 
@@ -643,9 +618,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
                 .apply(lambda x: unidecode(str(x)).lower().strip())
             )
 
-        # --------------------------------------------------
-        # MATCH EXACT TRANSFERMARKT : NOM + SAISON
-        # --------------------------------------------------
 
         merge_3_exact = pd.merge(
             remaining,
@@ -664,9 +636,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
 
         print(f"[3.1] Match direct TM exact : {len(merge_3_exact)} | Restants : {len(remaining)}")
 
-        # --------------------------------------------------
-        # MATCH FUZZY DIRECT TRANSFERMARKT
-        # --------------------------------------------------
+        # Match fuzzy direct Transfermarkt
 
         tm_fuzzy_rows = []
 
@@ -759,9 +729,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         print(f"[3.2] Match fuzzy TM : {len(tm_fuzzy_rows)} | Restants : {len(remaining)}")
 
 
-    # ==========================================================
-    # ASSEMBLAGE RESULTATS
-    # ==========================================================
 
     remaining = remaining.drop(
         columns=['player_season_key', 'name_clean', 'team_clean', 'season_str'],
@@ -782,9 +749,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     )
 
 
-    # ==========================================================
-    # AJOUT INFOS TRANSFERMARKT
-    # ==========================================================
 
     cols_identity = [
         'player_id', 'name', 'date_of_birth', 'sub_position', 'position',
@@ -819,9 +783,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         df_final['name'] = df_final['player']
 
 
-    # ==========================================================
-    # AJOUT BLESSURES
-    # ==========================================================
+    # Ajout des blessures
 
     cols_inj_metrics = [
         c for c in df_blessures.columns
@@ -845,18 +807,12 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         df_final[cols_inj_metrics] = df_final[cols_inj_metrics].fillna(0)
 
 
-    # ==========================================================
-    # INTEGRATION CLASSEMENT FIN DE SAISON
-    # ==========================================================
+    # Intégration du classement de fin de saison
 
     try:
 
         df_class = pd.read_csv("../data/classement_fin_saison.csv")
 
-        # --------------------------------------------------
-        # Nettoyage club : supprime accents, ponctuation,
-        # apostrophes, tirets → chaîne alphanumérique simple
-        # --------------------------------------------------
 
         def clean_club(x):
             x = unidecode(str(x)).lower().strip()
@@ -868,11 +824,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
             )
             return " ".join(x.split())
 
-        # --------------------------------------------------
         # Dictionnaire complet de synonymes
-        # CLÉ   = nom après clean_club() dans df_final
-        # VALEUR = nom après clean_club() dans df_class
-        # --------------------------------------------------
 
         dict_synonymes_clubs = {
 
@@ -938,9 +890,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
 
         }
 
-        # --------------------------------------------------
-        # Application du nettoyage puis du mapping
-        # --------------------------------------------------
 
         df_final['team_clean_tmp'] = df_final['team'].apply(clean_club)
         df_class['team_clean_tmp'] = df_class['nom_equipe'].apply(clean_club)
@@ -948,10 +897,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         df_final['team_clean_tmp'] = df_final['team_clean_tmp'].replace(dict_synonymes_clubs)
         df_class['team_clean_tmp'] = df_class['team_clean_tmp'].replace(dict_synonymes_clubs)
 
-        # --------------------------------------------------
-        # Conversion saison soccerdata → format classement
-        # ex: "2223" → "2022/2023"
-        # --------------------------------------------------
 
         def decode_soccerdata_season(x):
             s = str(x).replace(".0", "").strip()
@@ -962,9 +907,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         df_final['season_mapping_key'] = df_final['season'].apply(decode_soccerdata_season)
         df_class['saison_tmp']         = df_class['saison'].astype(str).str.strip()
 
-        # --------------------------------------------------
-        # MERGE PRINCIPAL : club + saison
-        # --------------------------------------------------
+        # Merge club + saison
 
         df_final = pd.merge(
             df_final,
@@ -974,11 +917,8 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
             how='left'
         )
 
-        # --------------------------------------------------
-        # FALLBACK FUZZY pour les NA restants
         # Certains clubs ont un nom légèrement différent
         # même après le dictionnaire (ex : variantes mineures)
-        # --------------------------------------------------
 
         mask_na = df_final['classement'].isna()
 
@@ -1012,9 +952,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
                     if len(val) > 0:
                         df_final.at[idx, 'classement'] = val[0]
 
-        # --------------------------------------------------
-        # Rapport final
-        # --------------------------------------------------
 
         n_ok  = df_final['classement'].notna().sum()
         n_tot = len(df_final)
@@ -1024,14 +961,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
 
         if n_na > 0:
             clubs_na = df_final[df_final['classement'].isna()]['team'].unique()
-            print(
-                f"NA restants ({n_na}) — clubs hors top 5 ligues cette saison "
-                f"(relégués, D2, etc.) : {sorted(clubs_na)}"
-            )
 
-        # --------------------------------------------------
-        # Nettoyage colonnes temporaires
-        # --------------------------------------------------
 
         df_final = df_final.drop(
             columns=['team_clean_tmp', 'season_mapping_key', 'saison_tmp'],
@@ -1041,10 +971,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     except Exception as e:
         print("Erreur intégration classement :", e)
 
-
-    # ==========================================================
-    # NETTOYAGE FINAL
-    # ==========================================================
 
     df_final = df_final.drop(
         columns=[
