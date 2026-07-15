@@ -13,4 +13,5 @@
 !dataset_blessures.csv
 /venv/*
 __pycache__/
+catboost_*/
 *.pyc
