@@ -855,103 +855,112 @@ def executer_pipeline_preprocessing(
     height_min=155,
     height_max=210,
 ):
-    """Exécute l'intégralité du pipeline de préprocessing : split temporel,
-
-    traitement des outliers (par la médiane du poste sur le train),
+    """Exécute l'intégralité du pipeline de préprocessing : split temporel/aléatoire,
+    traitement des outliers, imputation de xg et Performance_Gls au NIVEAU 1 
+    (médiane par Poste × Ligue apprise sur le Train pour éviter le data leakage),
     normalisation MinMax et sauvegardes.
     """
 
+    # Filtrage et exclusion de la saison 2025
     if "season_year" in df.columns:
         df_filtré = df[df["season_year"] != 2025].copy()
         nb_exclus = len(df) - len(df_filtré)
         if nb_exclus > 0:
-            print(
-                f"{nb_exclus} lignes de la saison 2025 ont été écartées du pipeline."
-            )
+            print(f"{nb_exclus} lignes de la saison 2025 ont été écartées du pipeline.")
     else:
         df_filtré = df.copy()
 
+    # Split des données
     if methode_split == "temporel":
-        # Split Temporel classique (Train: 2020-2022, Val: 2023, Test: 2024)
-        df_train = df_filtré[
-            df_filtré["season_year"].isin([2020, 2021, 2022])
-        ].copy()
+        df_train = df_filtré[df_filtré["season_year"].isin([2020, 2021, 2022])].copy()
         df_val = df_filtré[df_filtré["season_year"].isin([2023])].copy()
         df_test = df_filtré[df_filtré["season_year"].isin([2024])].copy()
-
     elif methode_split == "aleatoire":
-        # Split Aléatoire (ex: 70% Train, 15% Val, 15% Test)
-        # Étape 1 : On isole le Train (70%) et un bloc temporaire de Validation + Test (30%)
         df_train, df_temp = train_test_split(
             df_filtré, test_size=0.30, random_state=seed_aleatoire
         )
-        # Étape 2 : On coupe le bloc temporaire en deux parts égales (15% Val, 15% Test)
         df_val, df_test = train_test_split(
             df_temp, test_size=0.50, random_state=seed_aleatoire
         )
-
-        # Re-conversion explicite en copie pour éviter les warnings Pandas
         df_train = df_train.copy()
         df_val = df_val.copy()
         df_test = df_test.copy()
-
     else:
         raise ValueError(
             f"Méthode de split '{methode_split}' inconnue. Choisissez 'temporel' ou 'aleatoire'."
         )
     
-    print(
-        f"Split effectué -> Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}"
-    )
+    print(f"Split effectué -> Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}")
 
     # Vérification de la présence de la colonne de poste
     if col_poste not in df_train.columns:
-        raise ValueError(
-            f"La colonne de poste '{col_poste}' est absente du dataset."
-        )
+        raise ValueError(f"La colonne de poste '{col_poste}' est absente du dataset.")
 
     # Traitement des outliers par poste (Taille en cm)
-    # On calcule les médianes par poste uniquement sur le train pour éviter le data leakage
-    medianes_par_poste = (
-        df_train.groupby(col_poste)["height_in_cm"].median().to_dict()
-    )
-
-    # Médiane globale de secours au cas où un poste bizarre n'aurait pas de médiane
+    medianes_par_poste = df_train.groupby(col_poste)["height_in_cm"].median().to_dict()
     mediane_globale_train = df_train["height_in_cm"].median()
 
-    outlier_stats = {
-        "height_in_cm": {
-            "lower": height_min,
-            "upper": height_max,
-            "medianes_par_poste": medianes_par_poste,
-            "mediane_globale": mediane_globale_train,
-        }
-    }
-
-    # Application de la correction sur les 3 splits
     for df_split in [df_train, df_val, df_test]:
-        # Détection des lignes qui ont un problème de taille
-        mask_outlier = (df_split["height_in_cm"] < height_min) | (
-            df_split["height_in_cm"] > height_max
-        )
-
+        mask_outlier = (df_split["height_in_cm"] < height_min) | (df_split["height_in_cm"] > height_max)
         if mask_outlier.any():
-            # Pour les lignes en anomalie, on récupère la médiane correspondant à leur poste
             valeurs_remplacement = df_split[col_poste].map(medianes_par_poste)
+            valeurs_remplacement = valeurs_remplacement.fillna(mediane_globale_train)
+            df_split.loc[mask_outlier, "height_in_cm"] = valeurs_remplacement[mask_outlier]
 
-            # Sécurité : si un poste n'était pas dans le train, on met la médiane globale
-            valeurs_remplacement = valeurs_remplacement.fillna(
-                mediane_globale_train
-            )
+    print(f"Outliers traités (Bornes: [{height_min}, {height_max}] | Remplacement par la médiane du poste du Train).")
 
-            # On applique le remplacement uniquement là où le masque est Vrai
-            df_split.loc[mask_outlier, "height_in_cm"] = valeurs_remplacement[
-                mask_outlier
-            ]
+    # Imputation de xg et Performance_Gls (Poste × Ligue)
+    COLS_CIBLES = [c for c in ["xg", "Performance_Gls"] if c in df_train.columns]
+    
+    if COLS_CIBLES:
+        # Préparation des colonnes temporaires de regroupement pour les 3 splits
+        for df_split in [df_train, df_val, df_test]:
+            # Identification de la ligue active (ex: league_Ligue1, etc.)
+            league_cols = [c for c in df_split.columns if c.startswith("league_")]
+            if league_cols:
+                df_split["_ligue"] = df_split[league_cols].idxmax(axis=1).where(
+                    df_split[league_cols].max(axis=1) == 1, other="Autre"
+                )
+            else:
+                df_split["_ligue"] = "Autre"
+            
+            # Identification du poste
+            df_split["_position"] = df_split[col_poste].fillna("Inconnu")
 
-    print(
-        f"Outliers traités (Bornes: [{height_min}, {height_max}] | Remplacement par la médiane du poste du Train)."
-    )
+        # Application de l'imputation (Poste × Ligue)
+        for col in COLS_CIBLES:
+            # Calcul des médianes sur le TRAIN uniquement
+            med_1_train = df_train.groupby(["_position", "_ligue"])[col].median().rename("_med_1")
+
+            # Application sur Train, Val et Test
+            for df_name, df_split in [("Train", df_train), ("Val", df_val), ("Test", df_test)]:
+                n_nan_initial = df_split[col].isna().sum()
+                if n_nan_initial == 0:
+                    continue
+
+                # Jointure sur Poste × Ligue (permet de matcher même si la saison change !)
+                df_split = df_split.join(med_1_train, on=["_position", "_ligue"])
+                df_split[col] = df_split[col].fillna(df_split["_med_1"])
+                df_split.drop(columns=["_med_1"], inplace=True)
+
+                # Réassignation des DataFrames
+                if df_name == "Train":
+                    df_train = df_split
+                elif df_name == "Val":
+                    df_val = df_split
+                elif df_name == "Test":
+                    df_test = df_split
+
+                n_nan_final = df_split[col].isna().sum()
+                print(f"  [{df_name}] '{col}' : {n_nan_initial} NaN → {n_nan_final} NaN restants (Imputation par Poste × Ligue).")
+
+        # Nettoyage des colonnes temporaires
+        for df_split in [df_train, df_val, df_test]:
+            df_split.drop(columns=["_ligue", "_position"], inplace=True, errors='ignore')
+        
+        print("Imputation xg / Performance_Gls terminée.")
+    else:
+        print("Aucune colonne cible trouvée (xg, Performance_Gls) pour l'imputation.")
 
     # Normalisation MinMax [0-1]
     cols_manquantes = [c for c in cols_a_normaliser if c not in df_train.columns]
@@ -967,6 +976,7 @@ def executer_pipeline_preprocessing(
             df_split[f"{col}_nor"] = normalized[:, i]
 
     # Sauvegarde des fichiers finaux
+    os.makedirs(dossier_sortie, exist_ok=True)
     df_train.to_csv(
         os.path.join(dossier_sortie, "train.csv"),
         index=False,
