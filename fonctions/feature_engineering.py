@@ -49,7 +49,7 @@ def generer_feature_engineering_football(df):
         df_fe["efficacite_devant_but"] = np.where(
             df_fe["Performance_Gls"] > 0,
             df_fe["xg"] / df_fe["Performance_Gls"],
-            99.0,  # Valeur de 99 si pas de buts
+            9.0,  # Valeur de 9.0 si pas de buts
         )
 
     if "player" in df_fe.columns and "season_year" in df_fe.columns:
