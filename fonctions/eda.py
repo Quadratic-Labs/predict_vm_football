@@ -8,6 +8,7 @@ from sklearn.linear_model import LinearRegression
 import warnings
 from pathlib import Path
 from scipy.stats import pearsonr
+from matplotlib.ticker import FuncFormatter
 
 warnings.filterwarnings("ignore")
 
@@ -925,7 +926,7 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
 
     # Création des boxplots comparatifs
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle(f"Profil des joueurs à {target_col} ≥ 100M€ vs reste", fontsize=13, fontweight="bold")
+    # fig.suptitle(f"Profil des joueurs à {target_col} ≥ 100M€ vs reste", fontsize=13, fontweight="bold")
 
     # Utilisation d'une copie locale pour éviter d'ajouter de façon permanente la colonne 'group' au df global
     df_local = df.copy()
@@ -1041,12 +1042,6 @@ def verifier_coherence_jours_blessures(df):
         print("  Aucune donnée comparable disponible (valeurs manquantes ou non numériques).")
 
 
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
-
 def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", dossier_sauvegarde=None, couleurs_dict=None):
     """Calcule l'évolution de la valeur marchande (médiane et moyenne) par saison,
     affiche le bilan textuel et génère l'unique graphique d'évolution des courbes.
@@ -1124,7 +1119,7 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
     # Adaptation du nom pour le titre
     nom_cible_titre = "Valeur Marchande" if target_col == "market_value_in_eur" else target_col
 
-    plt.title(f"Évolution temporelle : Moyenne et Médiane de {nom_cible_titre} par saison", fontsize=13, fontweight="bold")
+    # plt.title(f"Évolution temporelle : Moyenne et Médiane de {nom_cible_titre} par saison", fontsize=13, fontweight="bold")
     plt.xlabel("Saison")
     plt.ylabel("VM (M€)")
     plt.legend()
@@ -1245,9 +1240,9 @@ def analyser_cycle_vie_financier(df):
     )
 
     # Titre général
-    ax1.set_title(
-        "Cycle de vie financier d'un joueur", fontsize=14, fontweight="bold"
-    )
+    #ax1.set_title(
+    #    "Cycle de vie financier d'un joueur", fontsize=14, fontweight="bold"
+    #)
 
     # Fusion propre des légendes des deux axes distincts
     lines1, labels1 = ax1.get_legend_handles_labels()
@@ -1263,11 +1258,6 @@ def analyser_cycle_vie_financier(df):
     # On retourne le DataFrame nettoyé au cas où tu en as besoin pour la suite
     return df_clean
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from matplotlib.ticker import FuncFormatter
 
 def analyser_distribution_prix_ligue_poste(df):
     """Reconstitue la colonne ligue à partir du One-Hot, nettoie les noms de championnats,
@@ -1340,11 +1330,11 @@ def analyser_distribution_prix_ligue_poste(df):
     formatter_millions = FuncFormatter(lambda y, pos: f"{y / 1e6:g}")
     plt.gca().yaxis.set_major_formatter(formatter_millions)
 
-    plt.title(
-        "Distribution des prix par Championnat et Poste (4 Catégories Majeures)",
-        fontsize=14,
-        fontweight="bold",
-    )
+    # plt.title(
+    #     "Distribution des prix par Championnat et Poste (4 Catégories Majeures)",
+    #     fontsize=14,
+    #     fontweight="bold",
+    # )
     plt.xlabel("Championnat")
     plt.ylabel("Valeur Marchande (M€)")
     plt.xticks(rotation=15, ha="right")  # Rotation réduite à 15° car les noms sont plus courts et plus propres
