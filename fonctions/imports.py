@@ -110,7 +110,7 @@ def download_football_data_datasets(annee_debut, annee_fin, leagues):
     Télécharge, agrège et archive localement les données de plusieurs ligues et saisons.
     """
     # Génération automatique de la liste des saisons
-    seasons = [f"{str(annee)[2:]}{str(annee+1)[2:]}" for annee in range(annee_debut, annee_fin)]
+    seasons = [f"{str(annee)[2:]}{str(annee+1)[2:]}" for annee in range(annee_debut, annee_fin + 1)]
 
     mapping = {
         "GB1": "E0",
