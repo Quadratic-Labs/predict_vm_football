@@ -861,23 +861,16 @@ def executer_pipeline_preprocessing(
     normalisation MinMax et sauvegardes.
     """
 
-    # Filtrage et exclusion de la saison 2025
-    if "season_year" in df.columns:
-        df_filtré = df[df["season_year"] != 2025].copy()
-        nb_exclus = len(df) - len(df_filtré)
-        if nb_exclus > 0:
-            print(f"{nb_exclus} lignes de la saison 2025 ont été écartées du pipeline.")
-    else:
-        df_filtré = df.copy()
 
     # Split des données
     if methode_split == "temporel":
-        df_train = df_filtré[df_filtré["season_year"].isin([2020, 2021, 2022])].copy()
-        df_val = df_filtré[df_filtré["season_year"].isin([2023])].copy()
-        df_test = df_filtré[df_filtré["season_year"].isin([2024])].copy()
+        df_train = df[df["season_year"].isin([2020, 2021, 2022])].copy()
+        df_val = df[df["season_year"].isin([2023])].copy()
+        df_test = df[df["season_year"].isin([2024])].copy()
+        df_en_cours = df[df["season_year"].isin([2025])].copy()
     elif methode_split == "aleatoire":
         df_train, df_temp = train_test_split(
-            df_filtré, test_size=0.30, random_state=seed_aleatoire
+            df, test_size=0.30, random_state=seed_aleatoire
         )
         df_val, df_test = train_test_split(
             df_temp, test_size=0.50, random_state=seed_aleatoire
@@ -885,6 +878,7 @@ def executer_pipeline_preprocessing(
         df_train = df_train.copy()
         df_val = df_val.copy()
         df_test = df_test.copy()
+        df_en_cours = df_en_cours.copy()
     else:
         raise ValueError(
             f"Méthode de split '{methode_split}' inconnue. Choisissez 'temporel' ou 'aleatoire'."
@@ -900,7 +894,7 @@ def executer_pipeline_preprocessing(
     medianes_par_poste = df_train.groupby(col_poste)["height_in_cm"].median().to_dict()
     mediane_globale_train = df_train["height_in_cm"].median()
 
-    for df_split in [df_train, df_val, df_test]:
+    for df_split in [df_train, df_val, df_test, df_en_cours]:
         mask_outlier = (df_split["height_in_cm"] < height_min) | (df_split["height_in_cm"] > height_max)
         if mask_outlier.any():
             valeurs_remplacement = df_split[col_poste].map(medianes_par_poste)
@@ -914,7 +908,7 @@ def executer_pipeline_preprocessing(
     
     if COLS_CIBLES:
         # Préparation des colonnes temporaires de regroupement pour les 3 splits
-        for df_split in [df_train, df_val, df_test]:
+        for df_split in [df_train, df_val, df_test, df_en_cours]:
             # Identification de la ligue active (ex: league_Ligue1, etc.)
             league_cols = [c for c in df_split.columns if c.startswith("league_")]
             if league_cols:
@@ -933,7 +927,7 @@ def executer_pipeline_preprocessing(
             med_1_train = df_train.groupby(["_position", "_ligue"])[col].median().rename("_med_1")
 
             # Application sur Train, Val et Test
-            for df_name, df_split in [("Train", df_train), ("Val", df_val), ("Test", df_test)]:
+            for df_name, df_split in [("Train", df_train), ("Val", df_val), ("Test", df_test), ("En Cours", df_en_cours)]:
                 n_nan_initial = df_split[col].isna().sum()
                 if n_nan_initial == 0:
                     continue
@@ -950,12 +944,14 @@ def executer_pipeline_preprocessing(
                     df_val = df_split
                 elif df_name == "Test":
                     df_test = df_split
+                elif df_name == "En Cours":
+                    df_en_cours = df_split
 
                 n_nan_final = df_split[col].isna().sum()
                 print(f"  [{df_name}] '{col}' : {n_nan_initial} NaN → {n_nan_final} NaN restants (Imputation par Poste × Ligue).")
 
         # Nettoyage des colonnes temporaires
-        for df_split in [df_train, df_val, df_test]:
+        for df_split in [df_train, df_val, df_test, df_en_cours]:
             df_split.drop(columns=["_ligue", "_position"], inplace=True, errors='ignore')
         
         print("Imputation xg / Performance_Gls terminée.")
@@ -970,7 +966,7 @@ def executer_pipeline_preprocessing(
     scaler = MinMaxScaler()
     scaler.fit(df_train[cols_a_normaliser])
 
-    for df_split in [df_train, df_val, df_test]:
+    for df_split in [df_train, df_val, df_test, df_en_cours]:
         normalized = scaler.transform(df_split[cols_a_normaliser])
         for i, col in enumerate(cols_a_normaliser):
             df_split[f"{col}_nor"] = normalized[:, i]
@@ -992,9 +988,14 @@ def executer_pipeline_preprocessing(
         index=False,
         encoding="utf-8-sig",
     )
+    df_en_cours.to_csv(
+        os.path.join(dossier_sortie, "en_cours.csv"),
+        index=False,
+        encoding="utf-8-sig",
+    )
 
     print(f"Pipeline terminé ! Fichiers sauvegardés dans : {dossier_sortie}\n")
-    return df_train, df_val, df_test
+    return df_train, df_val, df_test, df_en_cours
 
 
 def executer_pipeline_nettoyage(df, df_fifa):
