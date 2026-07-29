@@ -223,8 +223,7 @@ def generer_feature_engineering_football(df):
         )
     
     if "age" in df_fe.columns:
-        df_fe["peak_distance"]   = (df_fe["age"] - 25).abs()
-        df_fe["peak_distance_non_abs"] = df_fe["age"] - 25
+        df_fe["peak_distance"]   = df_fe["age"] - 25
         df_fe["age_sq"]          = df_fe["age"] ** 2
         df_fe["is_prime"]        = ((df_fe["age"] >= 24) & (df_fe["age"] <= 28)).astype(int)
 
