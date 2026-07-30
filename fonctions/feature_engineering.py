@@ -227,6 +227,35 @@ def generer_feature_engineering_football(df):
         df_fe["age_sq"]          = df_fe["age"] ** 2
         df_fe["pic_age"]        = ((df_fe["age"] >= 24) & (df_fe["age"] <= 28)).astype(int)
 
+
+
+    # Création de la variable "competition_internationale"
+
+    # Dictionnaire des années de compétitions continentales par confédération
+    CONTINENTAL_YEARS_BY_CONFED = {
+        "confederation_CAF": {2020, 2022, 2024},
+        "confederation_UEFA": {2020, 2023},
+        "confederation_CONMEBOL": {2020, 2023},
+        "confederation_CONCACAF": {2020, 2022, 2024},
+        "confederation_AFC": {2022},
+        "confederation_OFC": {2023}
+    }
+
+    # Application de la logique d'encodage
+    if "season_year" in df_fe.columns:
+        # Condition 1 : Coupe du Monde
+        is_world_cup = ((df_fe["season_year"] + 1) % 4 == 2)
+
+        # Condition 2 : Coupe continentale spécifique à la confédération du joueur
+        is_continental = pd.Series(False, index=df_fe.index)
+        
+        for confed_col, years in CONTINENTAL_YEARS_BY_CONFED.items():
+            if confed_col in df_fe.columns:
+                is_continental |= (df_fe[confed_col] == 1) & df_fe["season_year"].isin(years)
+
+        # Résultat : 1 si Coupe du Monde OU Coupe Continentale, sinon 0
+        df_fe["competition_internationale"] = (is_world_cup | is_continental).astype(int)
+
     print()
     print(
         f"Feature Engineering terminé ! Nombre total de colonnes : {df_fe.shape[1]}"
