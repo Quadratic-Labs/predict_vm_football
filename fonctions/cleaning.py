@@ -546,6 +546,8 @@ def encoder_dataset_football(
     if "nation" in cols_a_traiter:
         cols_a_traiter.remove("nation")
 
+
+
         if df_fifa_historique is not None and "nation" in df_encoded.columns:
             print(
                 "Encodage de 'nation' en 10 colonnes binaires Top FIFA (par saison)..."
@@ -555,6 +557,9 @@ def encoder_dataset_football(
             df_encoded["nation_join"] = (
                 df_encoded["nation"].astype(str).str.lower().str.strip()
             )
+
+            df_encoded["est_anglais"] = (df_encoded["nation_join"] == "eng").astype(int)
+            print("   • Variable 'est_anglais' créée.")
 
             df_fifa_temp = df_fifa_historique.copy()
             df_fifa_temp["nation_join"] = (
@@ -629,10 +634,7 @@ def encoder_dataset_football(
                     return None
                 return CODE_TO_CONFEDERATION.get(code_fbref, "Inconnu")
 
-
-
-
-            # ── Ajout de la variable confédération FIFA ───────────────────────
+            # Ajout de la variable confédération FIFA
             df_encoded["confederation"] = df_encoded["nation"].apply(get_confederation)
 
             df_encoded = pd.get_dummies(
