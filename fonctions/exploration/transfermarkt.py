@@ -96,13 +96,17 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
     sns.histplot(df_players['market_value_in_eur'].dropna(), kde=True, ax=axes[0, 0], color='blue')
     sns.histplot(np.log1p(df_players['market_value_in_eur'].dropna()), kde=True, ax=axes[0, 1], color='green')
     axes[0, 0].set_title("Distribution Valeur Marchande")
-    axes[0, 1].set_title("Distribution (Log Scale)")
+    axes[0, 1].set_title("Distribution Valeur Marchande (log1p)")
+    axes[0, 0].set_xlabel("Valeur en Euros (€)")
+    axes[0, 1].set_xlabel("log1p(Valeur en Euros (€))")
+    axes[0, 1].set_ylabel("Nombre de joueurs")
+    axes[0, 0].set_ylabel("Nombre de joueurs")
 
     # Graphique 3 : âge
     sns.histplot(df_players['age'].dropna(), bins=20, kde=True, ax=axes[1, 0], color='orange')
     axes[1, 0].set_title("Répartition par Âge")
 
-    # Graphique ' : boxplots
+    # Graphique 4 : boxplots
     if df_clubs is not None:
         
         # Identification des colonnes
