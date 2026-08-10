@@ -852,17 +852,19 @@ def executer_pipeline_preprocessing(
     dossier_sortie,
     cols_a_normaliser,
     col_poste="position",
+    col_joueur="player",
+    col_valeur_marchande="market_value_in_eur",
     methode_split="temporel",
     seed_aleatoire=42,
     height_min=155,
     height_max=210,
 ):
     """Exécute l'intégralité du pipeline de préprocessing : split temporel/aléatoire,
-    traitement des outliers, imputation de xg et Performance_Gls au NIVEAU 1 
+    traitement des outliers, imputation de xg et Performance_Gls au NIVEAU 1
     (médiane par Poste × Ligue apprise sur le Train pour éviter le data leakage),
+    calcul de log_prev_value (valeur marchande log de la saison précédente),
     normalisation MinMax et sauvegardes.
     """
-
 
     # Split des données
     if methode_split == "temporel":
@@ -880,12 +882,14 @@ def executer_pipeline_preprocessing(
         df_train = df_train.copy()
         df_val = df_val.copy()
         df_test = df_test.copy()
-        df_en_cours = df_en_cours.copy()
+        # NB: en split "aleatoire" il n'y a pas de notion de saison "en cours" ;
+        # on garde un DataFrame vide de même structure pour ne pas casser la suite du pipeline.
+        df_en_cours = df.iloc[0:0].copy()
     else:
         raise ValueError(
             f"Méthode de split '{methode_split}' inconnue. Choisissez 'temporel' ou 'aleatoire'."
         )
-    
+
     print(f"Split effectué -> Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}")
 
     # Vérification de la présence de la colonne de poste
@@ -907,9 +911,9 @@ def executer_pipeline_preprocessing(
 
     # Imputation de xg et Performance_Gls (Poste × Ligue)
     COLS_CIBLES = [c for c in ["xg", "Performance_Gls"] if c in df_train.columns]
-    
+
     if COLS_CIBLES:
-        # Préparation des colonnes temporaires de regroupement pour les 3 splits
+        # Préparation des colonnes temporaires de regroupement pour les 4 splits
         for df_split in [df_train, df_val, df_test, df_en_cours]:
             # Identification de la ligue active (ex: league_Ligue1, etc.)
             league_cols = [c for c in df_split.columns if c.startswith("league_")]
@@ -919,7 +923,7 @@ def executer_pipeline_preprocessing(
                 )
             else:
                 df_split["_ligue"] = "Autre"
-            
+
             # Identification du poste
             df_split["_position"] = df_split[col_poste].fillna("Inconnu")
 
@@ -928,7 +932,7 @@ def executer_pipeline_preprocessing(
             # Calcul des médianes sur le TRAIN uniquement
             med_1_train = df_train.groupby(["_position", "_ligue"])[col].median().rename("_med_1")
 
-            # Application sur Train, Val et Test
+            # Application sur Train, Val, Test et En Cours
             for df_name, df_split in [("Train", df_train), ("Val", df_val), ("Test", df_test), ("En Cours", df_en_cours)]:
                 n_nan_initial = df_split[col].isna().sum()
                 if n_nan_initial == 0:
@@ -955,10 +959,92 @@ def executer_pipeline_preprocessing(
         # Nettoyage des colonnes temporaires
         for df_split in [df_train, df_val, df_test, df_en_cours]:
             df_split.drop(columns=["_ligue", "_position"], inplace=True, errors='ignore')
-        
+
         print("Imputation xg / Performance_Gls terminée.")
     else:
         print("Aucune colonne cible trouvée (xg, Performance_Gls) pour l'imputation.")
+
+
+    # Valeur marchande de la saison précédente (log_prev_value)
+
+    if col_valeur_marchande in df_train.columns and col_joueur in df_train.columns:
+
+        # Base d'historique propre et triée par temps (tous splits confondus)
+        df_history = pd.concat([df_train, df_val, df_test, df_en_cours], axis=0)
+        df_history = df_history.sort_values([col_joueur, "season_year"])
+
+        # Shift sur cet historique de référence
+        df_history["log_prev_value"] = np.log1p(
+            df_history.groupby(col_joueur)[col_valeur_marchande].shift(1)
+        )
+
+        # Redécoupage du dataset en train/val/test/en_cours
+        df_train = df_history[df_history["season_year"].isin([2020, 2021, 2022])].copy()
+        df_val = df_history[df_history["season_year"] == 2023].copy()
+        df_test = df_history[df_history["season_year"] == 2024].copy()
+        df_en_cours = df_history[df_history["season_year"] == 2025].copy()
+
+        # Colonnes de ligue disponibles
+        league_cols_prev = [c for c in df_train.columns if c.startswith("league_")]
+
+        def extraire_nom_ligue(df_in):
+            df_temp = df_in.copy()
+            if league_cols_prev:
+                df_temp["league_name"] = df_temp[league_cols_prev].idxmax(axis=1).where(
+                    df_temp[league_cols_prev].max(axis=1) == 1, "league_Other"
+                )
+            else:
+                df_temp["league_name"] = "league_Other"
+            return df_temp
+
+        # Médianes apprises uniquement sur le Train, par Ligue x Poste
+        df_train_temp = extraire_nom_ligue(df_train)
+
+        prev_pos_league = (
+            df_train_temp
+            .groupby(["league_name", col_poste])["log_prev_value"]
+            .median()
+        )
+
+        # Médiane par poste simple (en secours)
+        prev_pos_backup = (
+            df_train_temp
+            .groupby(col_poste)["log_prev_value"]
+            .median()
+        )
+
+        # Médiane globale (dernier recours)
+        prev_global = df_train_temp["log_prev_value"].median()
+
+        def impute_log_prev_value(df_in):
+            df_with_league = extraire_nom_ligue(df_in)
+            original_index = df_with_league.index
+
+            mapped_prev_value = (
+                df_with_league.set_index(["league_name", col_poste])
+                .index.map(prev_pos_league)
+                .to_series(index=original_index)
+            )
+            df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(mapped_prev_value)
+
+            # Secours 1 : par poste simple
+            df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(
+                df_with_league[col_poste].map(prev_pos_backup)
+            )
+
+            # Secours 2 : médiane globale
+            df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(prev_global)
+
+            return df_with_league.drop(columns=["league_name"])
+
+        df_train = impute_log_prev_value(df_train)
+        df_val = impute_log_prev_value(df_val)
+        df_test = impute_log_prev_value(df_test)
+        df_en_cours = impute_log_prev_value(df_en_cours)
+
+        print("Colonne 'log_prev_value' calculée et imputée (secours Ligue×Poste -> Poste -> Global).")
+    else:
+        print(f"Colonnes '{col_valeur_marchande}' et/ou '{col_joueur}' absentes : 'log_prev_value' non calculée.")
 
     # Normalisation MinMax [0-1]
     cols_manquantes = [c for c in cols_a_normaliser if c not in df_train.columns]
