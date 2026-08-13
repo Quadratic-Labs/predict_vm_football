@@ -997,42 +997,60 @@ def executer_pipeline_preprocessing(
                 df_temp["league_name"] = "league_Other"
             return df_temp
 
-        # Médianes apprises uniquement sur le Train, par Ligue x Poste
+        # Médianes apprises uniquement sur le Train, par Ligue x Poste x Saison
         df_train_temp = extraire_nom_ligue(df_train)
 
+        prev_pos_league_year = (
+            df_train_temp
+            .groupby(["league_name", col_poste, "season_year"])["log_prev_value"]
+            .median()
+        )
+
+        # Secours 1 : Ligue × Poste (sans saison)
         prev_pos_league = (
             df_train_temp
             .groupby(["league_name", col_poste])["log_prev_value"]
             .median()
         )
 
-        # Médiane par poste simple (en secours)
+        # Secours 2 : Poste seul
         prev_pos_backup = (
             df_train_temp
             .groupby(col_poste)["log_prev_value"]
             .median()
         )
 
-        # Médiane globale (dernier recours)
+        # Secours 3 : médiane globale
         prev_global = df_train_temp["log_prev_value"].median()
 
         def impute_log_prev_value(df_in):
             df_with_league = extraire_nom_ligue(df_in)
             original_index = df_with_league.index
 
-            mapped_prev_value = (
-                df_with_league.set_index(["league_name", col_poste])
+            # Niveau 1 : Ligue × Poste × Saison (groupe le plus fin)
+            mapped_1 = (
+                df_with_league
+                .set_index(["league_name", col_poste, "season_year"])
+                .index.map(prev_pos_league_year)
+                .to_series(index=original_index)
+            )
+            df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(mapped_1)
+
+            # Niveau 2 : Ligue × Poste (si saison absente des médianes train)
+            mapped_2 = (
+                df_with_league
+                .set_index(["league_name", col_poste])
                 .index.map(prev_pos_league)
                 .to_series(index=original_index)
             )
-            df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(mapped_prev_value)
+            df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(mapped_2)
 
-            # Secours 1 : par poste simple
+            # Niveau 3 : Poste seul
             df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(
                 df_with_league[col_poste].map(prev_pos_backup)
             )
 
-            # Secours 2 : médiane globale
+            # Niveau 4 : médiane globale
             df_with_league["log_prev_value"] = df_with_league["log_prev_value"].fillna(prev_global)
 
             return df_with_league.drop(columns=["league_name"])
