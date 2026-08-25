@@ -58,7 +58,7 @@ def check_missing_and_duplicates(df):
     return analysis_df, duplicates
 
 
-def analyze_distributions(df):
+def analyse_distributions(df):
     """
     Calcule les statistiques descriptives des variables d'indisponibilité et le volume de
     blessures par saison.
