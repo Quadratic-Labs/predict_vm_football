@@ -1,7 +1,7 @@
 import pandas as pd
 import requests
-
-
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 def check_football_data_updates(season="2526"):
@@ -60,8 +60,6 @@ def check_football_data_updates(season="2526"):
     return df_updates
 
 
-
-
 def process_football_data(df_raw):
     """
     Filtre et nettoie le dataset football-data pour ne conserver que les variables essentielles.
@@ -92,10 +90,9 @@ def process_football_data(df_raw):
     
 
     print(f"Audit Football-Data :")
-    print(f"- Nombre de colonnes initiales : {df_raw.shape[1]}")
-    print(f"- Nombre de colonnes après élagage : {df.shape[1]}")
-    print(f"- Matchs validés : {len(df)}")
-    print("-" * 30)
+    print(f"    Nombre de colonnes initiales : {df_raw.shape[1]}")
+    print(f"    Nombre de colonnes après élagage : {df.shape[1]}")
+    print(f"    Matchs validés : {len(df)}")
     
     return df
 
@@ -130,9 +127,7 @@ def audit_data_quality(df, subset_duplicates=['Date', 'HomeTeam', 'AwayTeam']):
     
 
     print(f"Analyse qualité :")
-    print(f"-------------------------------")
-    print(f"• Doublons détectés : {dup_count}")
-    print(f"-------------------------------")
+    print(f"    Doublons détectés : {dup_count}")
     
     if len(na_only) > 0:
         print("Colonnes avec données manquantes :")
@@ -140,12 +135,8 @@ def audit_data_quality(df, subset_duplicates=['Date', 'HomeTeam', 'AwayTeam']):
         print(na_only.to_string(index=False))
     else:
         print("Aucune valeur manquante détectée dans le dataset.")
-        
-    print("-" * 31)
     
     return na_only
-
-
 
 
 def audit_football_data_coherence(df):
@@ -193,15 +184,13 @@ def audit_football_data_coherence(df):
 
   
     print(f"Audit de cohérence terminé :")
-    print(f"-------------------------------------------")
-    print(f"• Erreurs de score (négatifs)  : {len(invalid_scores)}")
-    print(f"• Erreurs de résultat (FTR)    : {total_res_errors}")
-    print(f"• Anomalies sur les cotes      : {odd_error_count}")
-    print(f"• Matchs en double             : {match_duplicates}")
-    print(f"-------------------------------------------")
+    print(f"    Erreurs de score (négatifs)  : {len(invalid_scores)}")
+    print(f"    Erreurs de résultat (FTR)    : {total_res_errors}")
+    print(f"    Anomalies sur les cotes      : {odd_error_count}")
+    print(f"    Matchs en double             : {match_duplicates}")
     
     if (len(invalid_scores) + total_res_errors + odd_error_count + match_duplicates) == 0:
-        print("Intégrité des données : PARFAITE")
+        print("Intégrité des données parfaite.")
     else:
         print("Des anomalies ont été détectées. Vérifiez votre source.")
 
@@ -244,19 +233,14 @@ def check_temporal_coverage(df, date_col):
     duration = (max_date - min_date).days
 
     print(f"Couverture temporelle [{date_col}] :")
-    print(f"  • Début : {min_date.strftime('%d/%m/%Y')}")
-    print(f"  • Fin   : {max_date.strftime('%d/%m/%Y')}")
-    print(f"  • Durée : {duration} jours")
-    print("-" * 35)
+    print(f"    Début : {min_date.strftime('%d/%m/%Y')}")
+    print(f"    Fin   : {max_date.strftime('%d/%m/%Y')}")
+    print(f"    Durée : {duration} jours")
     
     return min_date, max_date
 
 
-
-
-
-
-def analyze_league_distribution(df, league_col='Div'):
+def analyse_league_distribution(df, league_col='Div'):
     """
     Normalise les identifiants des ligues et analyse la distribution des matchs par compétition.
 
@@ -293,9 +277,80 @@ def analyze_league_distribution(df, league_col='Div'):
     counts = df_mapped[league_col].value_counts()
     
     print("Répartition par Compétition :")
-    print("-" * 30)
     print(counts.to_string())
-    print("-" * 30)
     print(f"Total Matchs : {len(df_mapped)}")
     
     return df_mapped
+
+
+def plot_football_seasons_distribution(df: pd.DataFrame, date_col: str = "Date", div_col: str = "Div",
+                                       save_path: str = None,) -> pd.DataFrame:
+    """Transforme la colonne Date en saison footballistique et trace la répartition par division.
+
+    arguments:
+        df : pd.DataFrame
+            DataFrame contenant les données de matchs.
+        date_col : str
+            Nom de la colonne contenant les dates (par défaut 'Date').
+        div_col : str
+            Nom de la colonne contenant les divisions/championnats (par défaut
+            'Div').
+        save_path : str, optional
+            Chemin du fichier pour sauvegarder le graphique (ex: 'graphique.png').
+
+    Returns:
+        pd.DataFrame
+            Tableau croisé dynamique (Saison x Division) avec les effectifs.
+    """
+    df = df.copy()
+
+    # Conversion de la date
+    df[date_col] = pd.to_datetime(df[date_col], dayfirst=True)
+
+    # Fonction vectorisée pour déduire la saison footballistique
+    year = df[date_col].dt.year
+    month = df[date_col].dt.month
+
+    saison_start = year.where(month >= 7, year - 1)
+    df["Saison"] = (
+        saison_start.astype(str) + "-" + (saison_start + 1).astype(str)
+    )
+
+    # Création du tableau croisé
+    saison_distribution = (
+        df.groupby(["Saison", div_col]).size().unstack(fill_value=0)
+    )
+
+    # Configuration et tracé
+    sns.set_theme(style="whitegrid")
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    saison_distribution.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax,
+        colormap="viridis",
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
+    # Habillage
+    ax.set_title(
+        "Répartition du nombre de matchs par saison et championnat",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
+    )
+    ax.set_xlabel("Saison", fontsize=12)
+    ax.set_ylabel("Nombre de matchs", fontsize=12)
+    ax.tick_params(axis="x", rotation=45)
+    ax.legend(title="Championnats", bbox_to_anchor=(1.05, 1), loc="upper left")
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
+    plt.show()
+
+    return saison_distribution
