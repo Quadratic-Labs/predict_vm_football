@@ -798,6 +798,112 @@ def extraire_classement_fin_saison(
     return df_fin_saison
 
 
+def classements_fin_saison(input_filepath: str = "../data/football_data.csv",
+                              output_filepath: str = "../data/classement_fin_saison.csv") -> pd.DataFrame:
+    """Calcule le classement final de chaque équipe par ligue et par saison
+
+    à partir d'un fichier CSV de données de matchs.
+
+    arguments:
+        input_filepath : str
+            Chemin du fichier CSV source contenant les matchs.
+        output_filepath : str, optional
+            Chemin où sauvegarder le CSV final (si None, ne sauvegarde pas sur le
+            disque).
+
+    Returns:
+        pd.DataFrame
+            DataFrame contenant le classement (nom_equipe, ligue, saison, classement).
+    """
+    # Chargement des données
+    df = pd.read_csv(input_filepath)
+
+    # Conversion de la colonne Date
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
+    df = df.dropna(subset=["Date"])
+
+    # Extraction vectorisée de la saison (beaucoup plus rapide que .apply)
+    year = df["Date"].dt.year
+    month = df["Date"].dt.month
+    season_start = year.where(month >= 7, year - 1)
+    df["season"] = (
+        season_start.astype(str) + "/" + (season_start + 1).astype(str)
+    )
+
+    # Filtrage des colonnes nécessaires
+    required_cols = [
+        "Div",
+        "season",
+        "HomeTeam",
+        "AwayTeam",
+        "FTHG",
+        "FTAG",
+        "FTR",
+    ]
+    df = df[required_cols].dropna()
+
+    # Calcul des points et buts pour les équipes à domicile
+    home_stats = pd.DataFrame(
+        {
+            "Div": df["Div"],
+            "season": df["season"],
+            "Team": df["HomeTeam"],
+            "Points": (df["FTR"] == "H") * 3 + (df["FTR"] == "D") * 1,
+            "GoalsFor": df["FTHG"],
+            "GoalsAgainst": df["FTAG"],
+        }
+    )
+
+    # Calcul des points et buts pour les équipes à l'extérieur
+    away_stats = pd.DataFrame(
+        {
+            "Div": df["Div"],
+            "season": df["season"],
+            "Team": df["AwayTeam"],
+            "Points": (df["FTR"] == "A") * 3 + (df["FTR"] == "D") * 1,
+            "GoalsFor": df["FTAG"],
+            "GoalsAgainst": df["FTHG"],
+        }
+    )
+
+    # Concaténation et agrégation par Équipe / Ligue / Saison
+    all_stats = pd.concat([home_stats, away_stats], ignore_index=True)
+
+    table = (
+        all_stats.groupby(["Team", "Div", "season"], as_index=False)
+        .agg({"Points": "sum", "GoalsFor": "sum", "GoalsAgainst": "sum"})
+    )
+
+    table["GoalDifference"] = table["GoalsFor"] - table["GoalsAgainst"]
+
+    # Tri pour attribuer les places du classement
+    table = table.sort_values(
+        by=["Div", "season", "Points", "GoalDifference", "GoalsFor"],
+        ascending=[True, True, False, False, False],
+    )
+
+    # Attribution du classement au sein de chaque groupe (Ligue + Saison)
+    table["classement"] = table.groupby(["Div", "season"]).cumcount() + 1
+
+    # Sélection et renommage des colonnes finales
+    final_csv = table[["Team", "Div", "season", "classement"]].rename(
+        columns={
+            "Team": "nom_equipe",
+            "Div": "ligue",
+            "season": "saison",
+            "classement": "classement",
+        }
+    )
+
+    # Sauvegarde si un chemin est spécifié
+    if output_filepath:
+        output_path = Path(output_filepath)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        final_csv.to_csv(output_path, index=False)
+        print(f"Le fichier '{output_filepath}' a été généré avec succès !")
+
+    return final_csv
+
 
 
 
