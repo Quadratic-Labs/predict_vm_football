@@ -5,16 +5,75 @@ import re
 from rapidfuzz import process, fuzz
 from unidecode import unidecode
 
+# Dictionnaire complet de synonymes
+
+dict_synonymes_clubs = {
+    # Angleterre
+    "manchester utd":           "man united",
+    "manchester united":        "man united",
+    "manchester city":          "man city",
+    "newcastle united":         "newcastle",
+    "newcastle utd":            "newcastle",
+    "tottenham hotspur":        "tottenham",
+    "west ham united":          "west ham",
+    "wolverhampton wanderers":  "wolves",
+    "sheffield utd":            "sheffield united",
+    "brighton hove albion":     "brighton",
+    "leicester city":           "leicester",
+    "norwich city":             "norwich",
+    "leeds united":             "leeds",
+    "nottingham forest":        "nottm forest",
+    "nott m forest":            "nottm forest",
+    "ipswich town":             "ipswich",
+    "luton town":               "luton",
+
+    # Espagne
+    "deportivo alaves":         "alaves",
+    "atletico madrid":          "ath madrid",
+    "athletic club":            "ath bilbao",
+    "athletic bilbao":          "ath bilbao",
+    "real betis":               "betis",
+    "celta vigo":               "celta",
+    "espanyol":                 "espanol",
+    "rayo vallecano":           "vallecano",
+    "real sociedad":            "sociedad",
+    "cadiz":                    "cadiz",
+    "almeria":                  "almeria",
+    "leganes":                  "leganes",
+
+    # France
+    "paris saint germain":      "paris sg",
+    "paris s g":                "paris sg",
+    "saint etienne":            "st etienne",
+    "clermont foot":            "clermont",
+    "nimes":                    "nimes",
+
+    # Allemagne
+    "borussia monchengladbach": "mgladbach",
+    "borussia m gladbach":      "mgladbach",
+    "gladbach":                 "mgladbach",
+    "m gladbach":               "mgladbach",
+    "eintracht frankfurt":      "ein frankfurt",
+    "koln":                     "fc koln",
+    "mainz 05":                 "mainz",
+    "arminia bielefeld":        "bielefeld",
+    "arminia":                  "bielefeld",
+    "hertha bsc":               "hertha",
+    "darmstadt 98":             "darmstadt",
+    "greuther furth":           "greuther furth",
+
+    # Italie
+    "inter milan":              "inter",
+    "ac milan":                 "milan",
+    "as roma":                  "roma",
+    "hellas verona":            "verona"
+}
+
+
 
 def prepare_transfermarkt_data(df_players, df_valuations):
     """
     Fusionne et nettoie les datasets Transfermarkt joueurs + valuations.
-
-    Objectifs :
-    - conserver la valeur marchande issue de player_valuations
-      (une ligne par joueur et par date)
-    - supprimer les colonnes dupliquées créées par le merge pandas
-    - harmoniser les noms de colonnes
 
     arguments:
         df_players (dataframe): dataset players.csv
@@ -31,12 +90,11 @@ def prepare_transfermarkt_data(df_players, df_valuations):
         how="left"
     )
 
-    # valeur marchande dynamique (historique)
     df_tm = df_tm.rename(columns={
         "market_value_in_eur_y": "market_value_in_eur"
     })
 
-    # suppression des doublons issus du merge
+    # Suppression des doublons issus du merge
     cols_to_drop = [
         "market_value_in_eur_x",
         "current_club_id_y",
@@ -48,14 +106,13 @@ def prepare_transfermarkt_data(df_players, df_valuations):
         errors="ignore"
     )
 
-    # harmonisation des colonnes conservées
+    # Harmonisation des colonnes conservées
     df_tm = df_tm.rename(columns={
         "current_club_id_x": "current_club_id",
         "current_club_name_x": "current_club_name"
     })
 
     return df_tm
-
 
 
 def aggregate_injuries_by_season(df_blessures):
@@ -83,87 +140,35 @@ def aggregate_injuries_by_season(df_blessures):
     """
     df = df_blessures.copy()
 
-    # Étape 1 : Nettoyage et typage numérique
+    # Nettoyage et typage numérique
     df["Jours_num"] = (
         df["Jours"].astype(str).str.extract(r"(\d+)").astype(float).fillna(0)
     )
+
     df["Matchs_Manques_num"] = pd.to_numeric(
         df["Matchs_Manques"], errors="coerce"
     ).fillna(0)
+
     df["Blessure_lower"] = df["Blessure"].astype(str).str.lower()
 
-    # Étape 2 : Définition des familles spécifiques et de leurs mots-clés associés
+    # Définition des familles spécifiques et de leurs mots-clés associés
     familles_specifiques = {
-        "musculaire": [
-            "muscular",
-            "hamstring",
-            "ischio",
-            "thigh",
-            "cuisse",
-            "tear",
-            "strain",
-            "adductor",
-            "groin",
-            "fibre",
-        ],
-        "genou": [
-            "knee",
-            "genou",
-            "cruciate",
-            "ligament",
-            "croisé",
-            "meniscus",
-            "ménisque",
-            "patella",
-        ],
-        "cheville_pied": [
-            "ankle",
-            "cheville",
-            "foot",
-            "pied",
-            "sprain",
-            "entorse",
-            "malleolus",
-            "achilles",
-        ],
+        "musculaire": ["muscular", "hamstring", "ischio", "thigh", "cuisse", "tear", "strain", "adductor",
+            "groin", "fibre"],
+        "genou": ["knee", "genou", "cruciate", "ligament", "croisé", "meniscus", "ménisque", "patella"],
+        "cheville_pied": ["ankle", "cheville", "foot", "pied", "sprain", "entorse", "malleolus", "achilles"],
         "mollet_tibia": ["calf", "mollet", "shin", "tibia", "fibula"],
-        "dos_bassin": [
-            "back",
-            "dos",
-            "lumbar",
-            "lombaire",
-            "vertebra",
-            "pubalgie",
-            "pelvis",
-            "spine",
-        ],
-        "trauma_severe": [
-            "fracture",
-            "broken",
-            "surgery",
-            "opération",
-            "concussion",
-            "trauma",
-        ],
-        "medical_repos": [
-            "corona",
-            "illness",
-            "maladie",
-            "cold",
-            "grippe",
-            "influenza",
-            "infection",
-            "appendicitis",
-            "rest",
-            "repos",
-        ],
+        "dos_bassin": ["back","dos","lumbar","lombaire","vertebra", "pubalgie", "pelvis", "spine"],
+        "trauma_severe": ["fracture", "broken", "surgery", "opération", "concussion", "trauma"],
+        "medical_repos": ["corona", "illness", "maladie", "cold", "grippe", "influenza", "infection",
+                          "appendicitis", "rest", "repos"],
     }
 
     # Liste pour suivre quelles lignes ont été classées
-    # Au début, aucune ligne n'est classée (Série remplie de False)
+    # Au début, aucune ligne n'est classée
     est_classe = pd.Series(False, index=df.index)
 
-    # Étape 3 : Création des colonnes pour les familles spécifiques
+    # Création des colonnes pour les familles spécifiques
     for nom_famille, mots_cles in familles_specifiques.items():
         pattern = "|".join(mots_cles)
         mask = df["Blessure_lower"].str.contains(pattern, na=False)
@@ -189,29 +194,16 @@ def aggregate_injuries_by_season(df_blessures):
     # Liste complète de toutes les familles pour la suite de l'algorithme
     toutes_familles = list(familles_specifiques.keys()) + ["minor_unknown"]
 
-    # Étape 4 : Configuration de l'agrégation finale
-    agg_dict = {
-        "Blessure": "count",
-        "Jours_num": "sum",
-        "Matchs_Manques_num": "max",
+    # Configuration de l'agrégation finale
+    agg_dict = {"Blessure": "count", "Jours_num": "sum", "Matchs_Manques_num": "max",
     }
 
     colonnes_de_base_a_garder = [
         col
         for col in df_blessures.columns
         if col
-        not in [
-            "player_id",
-            "Saison",
-            "Debut",
-            "Fin",
-            "Blessure",
-            "Jours",
-            "Matchs_Manques",
-            "Jours_num",
-            "Matchs_Manques_num",
-            "Blessure_lower",
-        ]
+        not in ["player_id","Saison", "Debut", "Fin", "Blessure", "Jours", "Matchs_Manques", "Jours_num",
+                 "Matchs_Manques_num", "Blessure_lower"]
     ]
 
     for col in colonnes_de_base_a_garder:
@@ -227,7 +219,7 @@ def aggregate_injuries_by_season(df_blessures):
         df.groupby(["player_id", "Saison"]).agg(agg_dict).reset_index()
     )
 
-    # Étape 5 : Renommage propre des colonnes
+    # Renommage propre des colonnes
     rename_dict = {
         "Blessure": "injury_nb_total",
         "Jours_num": "injury_days_total",
@@ -247,7 +239,7 @@ def aggregate_injuries_by_season(df_blessures):
             df_grouped[f"injury_{nom_famille}_count"] > 0, 1, 0
         )
 
-    # Étape 6 : Réorganisation esthétique des colonnes
+    # Réorganisation esthétique des colonnes
     colonnes_sans_count = [
         col for col in df_grouped.columns if not col.endswith("_count")
     ]
@@ -256,13 +248,38 @@ def aggregate_injuries_by_season(df_blessures):
         ["player_id", "Saison"]
         + colonnes_de_base_a_garder
         + [
-            col
-            for col in colonnes_sans_count
+            col for col in colonnes_sans_count
             if col not in ["player_id", "Saison"] + colonnes_de_base_a_garder
         ]
     )
 
     return df_grouped[colonnes_finales]
+
+
+def extract_season_start(season):
+    season = str(season)
+
+    if len(season) == 4:
+        return 2000 + int(season[:2])
+
+    return None
+
+
+# Fonction pour convertir le format "23/24" de Transfermarkt en année de début
+def convert_injury_season(saison_str):
+    saison_str = str(saison_str).strip()
+    parts = saison_str.split("/")
+    if len(parts) == 2:
+        try:
+            annee_courte = int(parts[0])
+            # Gère le passage à l'an 2000 (ex: "99/00" vs "23/24")
+            if annee_courte > 50:
+                return 1900 + annee_courte
+            else:
+                return 2000 + annee_courte
+        except ValueError:
+            return None
+    return None
 
 
 def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
@@ -271,24 +288,21 @@ def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
     footballistiques.
 
     Cette fonction prépare les dataframes pour une jointure ultérieure en créant des clés 
-    de jointure standardisées ('join_key') et en uniformisant les formats de date de naissance. 
+    de jointure standardisées et en uniformisant les formats de date de naissance. 
     Elle traite spécifiquement les encodages de caractères, la suppression des accents/majuscules 
     et l'extraction de l'année de naissance.
 
     arguments:
         df_mapping (dataframe): Dataframe de correspondance (issu de worldfootballR) 
             contenant au moins la colonne 'PlayerFBref'.
-        df_soccerdata (dataframe): Dataframe contenant les statistiques de jeu 
-            (Soccerdata) avec les colonnes 'player' et 'born'.
-        df_tm (dataframe): Dataframe issu de Transfermarkt contenant les colonnes 
-            'first_name', 'last_name', 'name', 'date_of_birth' et 'date'.
+        df_soccerdata (dataframe): Dataframe contenant les statistiques de jeu (Soccerdata).
+        df_tm (dataframe): Dataframe issu de Transfermarkt.
 
     returns:
         tuple[dataframe, dataframe, dataframe]: Un triplet contenant :
             - df_mapping_clean : Mapping avec 'join_key' normalisée.
-            - df_sd_clean : Statistiques SoccerData avec 'join_key' et 'dob_key' (année).
-            - df_tm_clean : Données Transfermarkt avec 'join_key', 'join_key_full',
-              'dob_key' (année) et la valorisation la plus récente par 'valuation_season_year'.
+            - df_sd_clean : Statistiques SoccerData.
+            - df_tm_clean : Données Transfermarkt.
     """
     
     # Nettoyage de df_mapping (issu de worldfootballR)
@@ -308,14 +322,6 @@ def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
         .str.strip()
     )
 
-    def extract_season_start(season):
-        season = str(season)
-
-        if len(season) == 4:
-            return 2000 + int(season[:2])
-
-        return None
-
     df_sd_clean['season_year'] = (
         df_sd_clean['season']
         .apply(extract_season_start)
@@ -327,7 +333,6 @@ def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
     # Conversion de la date de valorisation en datetime (à faire plus haut pour le filtrage)
     df_tm_clean['date'] = pd.to_datetime(df_tm_clean['date'], errors='coerce')
 
-    
     # Création de la clé par concaténation Prénom + Nom
     df_tm_clean['join_key'] = (
         df_tm_clean['first_name'].apply(normalize_name) + ' ' + 
@@ -360,22 +365,6 @@ def match_player_data(df_mapping, df_soccerdata, df_tm, df_blessures):
 
     # Le dataframe des blessures Transfermarkt
 
-    # Fonction pour convertir le format "23/24" de Transfermarkt en année de début
-    def convert_injury_season(saison_str):
-        saison_str = str(saison_str).strip()
-        parts = saison_str.split("/")
-        if len(parts) == 2:
-            try:
-                annee_courte = int(parts[0])
-                # Gère le passage à l'an 2000 (ex: "99/00" vs "23/24")
-                if annee_courte > 50:
-                    return 1900 + annee_courte
-                else:
-                    return 2000 + annee_courte
-            except ValueError:
-                return None
-        return None
-
     # On crée une colonne temporelle standardisée 'injury_season_year' (ex: 2023)
     df_blessures["injury_season_year"] = df_blessures[
         "Saison"
@@ -403,6 +392,7 @@ def fix_encoding(name):
         return name.encode('raw_unicode_escape').decode('utf-8')
     except (UnicodeDecodeError, UnicodeEncodeError):
         return name
+    
 
 def normalize_name(name):
     """
@@ -451,9 +441,45 @@ def clean_text(text):
     return unidecode(str(text)).lower().strip()
 
 
+def clean_club(x):
+            x = unidecode(str(x)).lower().strip()
+            x = (
+                x.replace(".", "")
+                 .replace("-", " ")
+                 .replace("'", "")
+                 .replace("\u2019", "")
+            )
+            return " ".join(x.split())
+
+
+def decode_soccerdata_season(x):
+    s = str(x).replace(".0", "").strip()
+    if len(s) == 4 and s.isdigit():
+        return f"20{s[:2]}/20{s[2:]}"
+    return s
+
 
 def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_min=90):
+    """Rapproche les données SoccerData avec Transfermarkt, les blessures et les classements.
 
+    Cette fonction exécute un pipeline d'appariement en cascade (exact et flou) 
+    entre SoccerData et Transfermarkt en s'appuyant sur des clés composites 
+    [Joueur + Saison]. Le jeu de données résultant est ensuite enrichi des profilings 
+    Transfermarkt, des historiques d'indisponibilité et du classement sportif de l'équipe.
+
+    arguments:
+        df_soccerdata (pd.DataFrame): Données source des joueurs (statistiques SoccerData).
+        df_mapping (pd.DataFrame): Table de correspondance préexistante (join_key -> tm_id).
+        df_tm (pd.DataFrame): Base de données Transfermarkt (profils, valeurs, saisons).
+        df_blessures (pd.DataFrame): Historique des blessures indexé par player_id et saison.
+        score_min (int, optional): Seuil de score minimal pour le matching flou. 
+            Defaults to 90.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame]: 
+            - df_final: DataFrame consolidé et enrichi avec métriques TM, blessures et classement.
+            - remaining: DataFrame des joueurs n'ayant pas trouvé de correspondance.
+    """
 
     df_soccerdata = df_soccerdata.loc[:, ~df_soccerdata.columns.duplicated()].copy()
     df_mapping    = df_mapping.loc[:, ~df_mapping.columns.duplicated()].copy()
@@ -462,7 +488,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
 
     results   = []
     remaining = df_soccerdata.copy()
-
 
     remaining['name_clean'] = (
         remaining['join_key']
@@ -486,7 +511,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         + "_"
         + remaining['season_str']
     )
-
 
 
     df_mapping_temp = df_mapping.copy()
@@ -520,7 +544,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     )
 
 
-
     merge_1 = pd.merge(
         remaining,
         df_mapping_saisonalise[['player_season_key', 'tm_id']]
@@ -536,7 +559,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
             ~remaining['player_season_key'].isin(merge_1['player_season_key'])
         ]
 
-    print(f"[1] Match exact Mapping saison : {len(merge_1)} | Restants : {len(remaining)}")
+    print(f"Match exact Mapping saison : {len(merge_1)} | Restants : {len(remaining)}")
 
 
     fuzzy_mapping_rows = []
@@ -584,7 +607,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
             ~remaining['player_season_key'].isin(merge_2['player_season_key'])
         ]
 
-    print(f"[2] Match fuzzy Mapping saison : {len(fuzzy_mapping_rows)} | Restants : {len(remaining)}")
+    print(f"Match fuzzy Mapping saison : {len(fuzzy_mapping_rows)} | Restants : {len(remaining)}")
 
 
 
@@ -634,7 +657,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
                 ~remaining['player_season_key'].isin(merge_3_exact['player_season_key'])
             ]
 
-        print(f"[3.1] Match direct TM exact : {len(merge_3_exact)} | Restants : {len(remaining)}")
+        print(f"Match direct TM exact : {len(merge_3_exact)} | Restants : {len(remaining)}")
 
         # Match fuzzy direct Transfermarkt
 
@@ -726,8 +749,7 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
                 ~remaining['player_season_key'].isin(merge_3_fuzzy['player_season_key'])
             ]
 
-        print(f"[3.2] Match fuzzy TM : {len(tm_fuzzy_rows)} | Restants : {len(remaining)}")
-
+        print(f"Match fuzzy TM : {len(tm_fuzzy_rows)} | Restants : {len(remaining)}")
 
 
     remaining = remaining.drop(
@@ -747,7 +769,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         ],
         errors='ignore'
     )
-
 
 
     cols_identity = [
@@ -813,96 +834,12 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
 
         df_class = pd.read_csv("../data/classement_fin_saison.csv")
 
-
-        def clean_club(x):
-            x = unidecode(str(x)).lower().strip()
-            x = (
-                x.replace(".", "")
-                 .replace("-", " ")
-                 .replace("'", "")
-                 .replace("\u2019", "")
-            )
-            return " ".join(x.split())
-
-        # Dictionnaire complet de synonymes
-
-        dict_synonymes_clubs = {
-
-            # Angleterre
-            "manchester utd":           "man united",
-            "manchester united":        "man united",
-            "manchester city":          "man city",
-            "newcastle united":         "newcastle",
-            "newcastle utd":            "newcastle",
-            "tottenham hotspur":        "tottenham",
-            "west ham united":          "west ham",
-            "wolverhampton wanderers":  "wolves",
-            "sheffield utd":            "sheffield united",
-            "brighton hove albion":     "brighton",
-            "leicester city":           "leicester",
-            "norwich city":             "norwich",
-            "leeds united":             "leeds",
-            "nottingham forest":        "nottm forest",
-            "nott m forest":            "nottm forest",
-            "ipswich town":             "ipswich",
-            "luton town":               "luton",
-
-            # Espagne
-            "deportivo alaves":         "alaves",
-            "atletico madrid":          "ath madrid",
-            "athletic club":            "ath bilbao",
-            "athletic bilbao":          "ath bilbao",
-            "real betis":               "betis",
-            "celta vigo":               "celta",
-            "espanyol":                 "espanol",
-            "rayo vallecano":           "vallecano",
-            "real sociedad":            "sociedad",
-            "cadiz":                    "cadiz",
-            "almeria":                  "almeria",
-            "leganes":                  "leganes",
-
-            # France
-            "paris saint germain":      "paris sg",
-            "paris s g":                "paris sg",
-            "saint etienne":            "st etienne",
-            "clermont foot":            "clermont",
-            "nimes":                    "nimes",
-
-            # Allemagne
-            "borussia monchengladbach": "mgladbach",
-            "borussia m gladbach":      "mgladbach",
-            "gladbach":                 "mgladbach",
-            "m gladbach":               "mgladbach",
-            "eintracht frankfurt":      "ein frankfurt",
-            "koln":                     "fc koln",
-            "mainz 05":                 "mainz",
-            "arminia bielefeld":        "bielefeld",
-            "arminia":                  "bielefeld",
-            "hertha bsc":               "hertha",
-            "darmstadt 98":             "darmstadt",
-            "greuther furth":           "greuther furth",
-
-            # Italie
-            "inter milan":              "inter",
-            "ac milan":                 "milan",
-            "as roma":                  "roma",
-            "hellas verona":            "verona",
-
-        }
-
-
         df_final['team_clean_tmp'] = df_final['team'].apply(clean_club)
         df_class['team_clean_tmp'] = df_class['nom_equipe'].apply(clean_club)
 
         df_final['team_clean_tmp'] = df_final['team_clean_tmp'].replace(dict_synonymes_clubs)
         df_class['team_clean_tmp'] = df_class['team_clean_tmp'].replace(dict_synonymes_clubs)
 
-
-        def decode_soccerdata_season(x):
-            s = str(x).replace(".0", "").strip()
-            if len(s) == 4 and s.isdigit():
-                return f"20{s[:2]}/20{s[2:]}"
-            return s
 
         df_final['season_mapping_key'] = df_final['season'].apply(decode_soccerdata_season)
         df_class['saison_tmp']         = df_class['saison'].astype(str).str.strip()
@@ -917,14 +854,13 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
             how='left'
         )
 
-        # Certains clubs ont un nom légèrement différent
-        # même après le dictionnaire (ex : variantes mineures)
+        # Certains clubs ont un nom légèrement différent même après le dictionnaire
 
         mask_na = df_final['classement'].isna()
 
         if mask_na.sum() > 0:
 
-            # Index saison → liste clubs du classement
+            # Liste clubs du classement
             class_by_saison = {
                 s: grp[['team_clean_tmp', 'classement']].drop_duplicates()
                 for s, grp in df_class.groupby('saison_tmp')
@@ -957,8 +893,6 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
         n_tot = len(df_final)
         n_na  = df_final['classement'].isna().sum()
 
-        print(f"\nClassement rempli : {n_ok} / {n_tot}")
-
         if n_na > 0:
             clubs_na = df_final[df_final['classement'].isna()]['team'].unique()
 
@@ -985,3 +919,124 @@ def run_player_matching(df_soccerdata, df_mapping, df_tm, df_blessures, score_mi
     )
 
     return df_final, remaining
+
+
+def executer_diagnostic_et_repartition(still_missing: pd.DataFrame, df_tm: pd.DataFrame,
+                                       clean_text_func) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Exécute le matching de diagnostic entre les joueurs manquants et Transfermarkt,
+    puis génère le détail individuel ainsi que la répartition nettoyée des motifs de rejet.
+    """
+    # Préparation du côté SoccerData / Joueurs manquants
+    remaining_debug = still_missing.copy()
+    remaining_debug['join_key_clean'] = remaining_debug['join_key'].apply(clean_text_func)
+    remaining_debug['team_clean'] = remaining_debug['team'].apply(clean_text_func)
+
+    # Préparation du côté Transfermarkt
+    cols_to_extract = ['name', 'player_id']
+    if 'current_club_name' in df_tm.columns:
+        cols_to_extract.append('current_club_name')
+
+    df_tm_unique = df_tm[cols_to_extract].drop_duplicates(subset=['name']).copy()
+    df_tm_unique['name_clean'] = df_tm_unique['name'].apply(clean_text_func)
+    
+    if 'current_club_name' in df_tm_unique.columns:
+        df_tm_unique['club_clean'] = df_tm_unique['current_club_name'].apply(clean_text_func)
+        
+    df_tm_unique = df_tm_unique.drop_duplicates(subset=['name_clean'])
+
+    tm_dict = df_tm_unique.set_index('name_clean').to_dict(orient='index')
+    tm_keys = [k for k in tm_dict.keys() if k and isinstance(k, str)]
+
+    # Boucle de diagnostic
+    rows_diagnostic = []
+
+    for _, row in remaining_debug.iterrows():
+        current_key = row['join_key_clean']
+        current_team = row['team_clean']
+        if not current_key:
+            continue
+
+        try:
+            res_set = process.extractOne(current_key, tm_keys, scorer=fuzz.token_set_ratio)
+            res_sort = process.extractOne(current_key, tm_keys, scorer=fuzz.token_sort_ratio)
+        except Exception:
+            continue
+
+        if res_set and res_sort:
+            res = res_set if res_set[1] >= res_sort[1] else res_sort
+        elif res_set:
+            res = res_set
+        elif res_sort:
+            res = res_sort
+        else:
+            rows_diagnostic.append({
+                'player_sd': row['player'],
+                'team_sd': row['team'],
+                'season_year': row['season_year'],
+                'best_match_tm': 'Aucun candidat',
+                'club_tm': '',
+                'score_nom': 0,
+                'score_club': 0,
+                'raison_rejet': 'Aucun résultat fuzzy'
+            })
+            continue
+
+        meta_tm = tm_dict.get(res[0], {})
+        score_club = fuzz.token_set_ratio(current_team, meta_tm.get('club_clean', ''))
+        seuil_club = 70 if res[1] < 90 else 50
+
+        if res[1] < 90 and score_club < seuil_club and res[1] < 95:
+            raison = f"Score nom OK ({res[1]}) mais club trop faible ({score_club} < {seuil_club})"
+        elif res[1] < 50:
+            raison = f"Score nom trop faible ({res[1]})"
+        else:
+            raison = f"Score nom ({res[1]}) + club ({score_club}) — à vérifier manuellement"
+
+        rows_diagnostic.append({
+            'player_sd': row['player'],
+            'team_sd': row['team'],
+            'season_year': row['season_year'],
+            'best_match_tm': meta_tm.get('name', res[0]),
+            'club_tm': meta_tm.get('current_club_name', ''),
+            'score_nom': res[1],
+            'score_club': score_club,
+            'raison_rejet': raison
+        })
+
+    df_diagnostic = pd.DataFrame(rows_diagnostic).sort_values('score_nom', ascending=False).reset_index(drop=True)
+
+    # Fonction interne de normalisation de la raison de rejet
+    def _simplifier_raison(text):
+        if not isinstance(text, str):
+            return text
+        
+        # Supprime tout contenu entre parenthèses
+        clean_text = re.sub(r'\([^)]*\)', '', text)
+        clean_text = clean_text.replace('—', '').replace('-', ' ')
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        
+        if "mais club trop faible" in clean_text:
+            return "Score nom OK mais club trop faible"
+        elif "à vérifier manuellement" in clean_text:
+            return "Score nom + club OK — à vérifier manuellement"
+        elif "Score nom trop faible" in clean_text:
+            return "Score nom trop faible"
+        elif "Aucun résultat fuzzy" in clean_text:
+            return "Aucun résultat fuzzy"
+            
+        return clean_text
+
+    # Calcul de la répartition nettoyée
+    df_diagnostic['raison_rejet_groupee'] = df_diagnostic['raison_rejet'].apply(_simplifier_raison)
+
+    df_repartition = (
+        df_diagnostic['raison_rejet_groupee']
+        .value_counts(normalize=True)
+        .mul(100)
+        .round(2)
+        .reset_index()
+    )
+    df_repartition.columns = ['Raison de rejet (Simplifiée)', 'Pourcentage (%)']
+
+    return df_repartition
