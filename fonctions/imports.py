@@ -242,7 +242,7 @@ def get_understat_data(start_season, end_season, ligues):
     print(f"Récupération des données Understat pour les ligues : {ligues} et saisons : {seasons_list}")
 
     try:
-        understat = sd.Understat(ligues=ligues, seasons=seasons_list)
+        understat = sd.Understat(leagues=ligues, seasons=seasons_list)
         df = understat.read_player_season_stats()
 
         if df is not None and not df.empty:
@@ -327,7 +327,7 @@ def get_fbref_data(start_season, end_season, ligues):
     print(f"Récupération des données FBref pour les ligues : {ligues} et saisons : {seasons_list}")
 
     try:
-        fbref = sd.FBref(ligues=ligues, seasons=seasons_list)
+        fbref = sd.FBref(leagues=ligues, seasons=seasons_list)
         all_stats = {}
 
         for stat in stat_types:
