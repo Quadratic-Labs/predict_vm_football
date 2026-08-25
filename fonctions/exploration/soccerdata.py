@@ -16,6 +16,7 @@ KEY_COLS_FIELD = [
     'age', 'born', 'nation', 'pos', 'league', 'season',
 ]
 
+# Colonnes clés issues de la revue de littérature (gardiens)
 KEY_COLS_GK = [
     'Playing Time_Min', 'Playing Time_MP',
     'Performance_GA', 'Performance_GA90', 'Performance_SoTA',
@@ -139,7 +140,6 @@ def audit_coverage_by_season(df, title="Couverture par saison et ligue"):
         df_plot["league"].map(LEAGUE_LABELS).fillna(df_plot["league"])
     )
 
-    # --- CORRECTION : Table de correspondance unifiée en chaînes de caractères (String) ---
     season_mapping = {
         "2021": "2020/2021",
         "2122": "2021/2022",
@@ -149,12 +149,11 @@ def audit_coverage_by_season(df, title="Couverture par saison et ligue"):
         "2526": "2025/2026",
     }
 
-    # 1. On force d'abord TOUTE la colonne en type 'str' pour éviter le mélange int/str
+    # On force d'abord toute la colonne en type 'str' pour éviter le mélange int/str
     df_plot["season"] = df_plot["season"].astype(str).str.strip()
 
-    # 2. On applique le mapping
+    # On applique le mapping
     df_plot["season"] = df_plot["season"].map(season_mapping).fillna(df_plot["season"])
-    # ------------------------------------------------------------------------------------
 
     coverage = (
         df_plot.groupby(["season", "league"]).size().unstack(fill_value=0)
@@ -189,7 +188,7 @@ def audit_distributions(df, metrics=None, title="Distributions des métriques cl
             'Performance_Int', 'Performance_TklW', 'age',
         ]
 
-    # On ne garde que les colonnes présentes ET numériques
+    # On ne garde que les colonnes présentes et numériques
     metrics = [
         m for m in metrics
         if m in df.columns and pd.api.types.is_numeric_dtype(df[m])
@@ -250,53 +249,74 @@ def audit_xg_missing_by_season(df, title="Taux de NaN sur xG par saison"):
     print(xg_missing.to_string())
     return xg_missing
 
+def plot_repartition_postes(
+    df,
+    colonne_poste="pos",
+    mapping_postes=None,
+    figsize=(8, 8),
+    palette="pastel",
+    title=None,
+):
+    """Calcule et affiche un camembert (pie chart) de la répartition des postes.
 
-def run_full_quality_audit(df, verbose=True):
+    Gère les postes multiples séparés par une virgule (ex: "DF,MF").
+
+    Arguments:
+        df (pd.DataFrame): Le DataFrame contenant les données.
+        colonne_poste (str): Nom de la colonne identifiant les postes.
+        mapping_postes (dict, optional): Dictionnaire de traduction/renommage
+          des postes.
+        figsize (tuple): Dimensions de la figure.
+        palette (str): Nom de la palette Seaborn à utiliser.
+        title (str, optional): Titre du graphique (si None, aucun titre
+          s'affiche).
+
+    Returns:
+        pd.Series: La répartition comptée par poste.
     """
-    Lance l'audit qualité complet du dataset SoccerData.
+    if mapping_postes is None:
+        mapping_postes = {
+            "GK": "Gardiens",
+            "DF": "Défenseurs",
+            "MF": "Milieux",
+            "FW": "Attaquants",
+        }
 
-    Enchaîne : séparation GK/field → manquants globaux → couverture variables clés
-    → couverture temporelle → distributions → diagnostic xG.
-
-    arguments:
-        df: DataFrame brut issu de data_final_soccerdata.csv.
-        verbose (bool): Si True, affiche les résultats intermédiaires.
-
-    returns:
-        dict: Résultats des audits (clés : 'missing_global', 'key_coverage',
-              'coverage_season', 'xg_missing').
-    """
-    print(f"AUDIT QUALITÉ — SoccerData  ({len(df):,} lignes, {df.shape[1]} colonnes)")
-
-    df_field, df_gk = split_field_gk(df)
-    print(f"\nJoueurs de champ : {len(df_field):,}  |  Gardiens : {len(df_gk):,}\n")
-
-    print("\n1. Valeurs manquantes — joueurs de champ")
-    missing_global = audit_missing_values(df_field, title="Joueurs de champ")
-
-    print("\n2. Couverture des variables clés")
-    key_coverage_field = audit_key_columns_missing(
-        df_field, KEY_COLS_FIELD, title="Variables clés — Joueurs de champ"
+    # Nettoyage et séparation des postes multiples
+    df_exploded = df.dropna(subset=[colonne_poste]).copy()
+    df_exploded[colonne_poste] = (
+        df_exploded[colonne_poste].astype(str).str.split(",")
     )
-    key_coverage_gk = audit_key_columns_missing(
-        df_gk, KEY_COLS_GK, title="Variables clés — Gardiens"
+    df_exploded = df_exploded.explode(colonne_poste)
+    df_exploded[colonne_poste] = df_exploded[colonne_poste].str.strip()
+
+    # Mapping
+    df_exploded[colonne_poste] = df_exploded[colonne_poste].map(
+        mapping_postes
+    ).fillna(df_exploded[colonne_poste])
+
+    # Calcul de la répartition
+    repartition = df_exploded[colonne_poste].value_counts()
+
+    # Création du graphique
+    sns.set_theme(style="whitegrid")
+    plt.figure(figsize=figsize)
+    colors = sns.color_palette(palette)[0 : len(repartition)]
+
+    plt.pie(
+        repartition,
+        labels=repartition.index,
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=colors,
+        wedgeprops={"edgecolor": "white", "linewidth": 2, "antialiased": True},
+        textprops={"fontsize": 12, "weight": "bold"},
     )
 
-    print("\n3. Couverture temporelle et géographique")
-    coverage_season = audit_coverage_by_season(df)
+    if title:
+        plt.title(title, fontsize=14, weight="bold", pad=20)
 
-    print("\n4. Distributions des métriques clés")
-    audit_distributions(df_field, title="Distributions — Joueurs de champ")
+    plt.tight_layout()
+    plt.show()
 
-    print("\n5. Diagnostic des données xG")
-    xg_missing = audit_xg_missing_by_season(df_field)
-
-    print("\nAudit terminé.")
-
-    return {
-        'missing_global':   missing_global,
-        'key_coverage':     key_coverage_field,
-        'key_coverage_gk':  key_coverage_gk,
-        'coverage_season':  coverage_season,
-        'xg_missing':       xg_missing,
-    }
+    return repartition
