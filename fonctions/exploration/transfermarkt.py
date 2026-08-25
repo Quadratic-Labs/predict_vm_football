@@ -122,7 +122,7 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
             how='left'
         )
         
-        # identifiants du Big 5
+        # Identifiants du Big 5
         big5_ids = ['GB1', 'ES1', 'L1', 'IT1', 'FR1']
         
         # Filtrage Big 5
@@ -139,7 +139,7 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
         
         df_big5['league_name'] = df_big5[col_comp].map(league_names)
         
-        # Ordre logique des ligues
+        # Ordre des ligues
         order = [
             'Premier League',
             'La Liga',
@@ -163,112 +163,6 @@ def plot_transfermarkt_quality(df_players, df_clubs=None):
         axes[1, 1].set_ylabel("Valeur marchande (€)")
         
         plt.setp(axes[1, 1].get_xticklabels(), rotation=45)
-
-
-
-
-
-def check_all_missing_values(df, title="Valeurs manquantes par colonne"):
-    """Identifie et visualise le pourcentage de valeurs manquantes pour chaque 
-    colonne du DataFrame.
-
-    Cette fonction calcule le taux de complétude des données et génère un
-    graphique à barres présentant uniquement les colonnes contenant des valeurs
-    nulles. Elle inclut un seuil critique visuel à 20%.
-
-    arguments:
-        df : Le DataFrame à analyser.
-        title (str): Le titre personnalisé pour le graphique.
-                    Par défaut : "Valeurs manquantes par colonne".
-
-    returns:
-        None: La fonction affiche un message texte si aucune valeur manquante
-        n'est trouvée, ou un graphique le cas échéant.
-    """
-    # Calcul du taux de complétude global initial (Toutes variables confondues)
-    total_cells = df.size
-    total_missing_initial = df.isnull().sum().sum()
-    completeness_initial = (
-        (total_cells - total_missing_initial) / total_cells
-    ) * 100
-
-    # Calcul du % de manquants par colonne pour le tri/graphique
-    missing_pct_per_col = (df.isnull().sum() / len(df)) * 100
-
-    # Identification des colonnes à exclure (au-dessus du seuil de 20%)
-    cols_above_20 = missing_pct_per_col[missing_pct_per_col > 20].index
-    df_filtered = df.drop(columns=cols_above_20)
-
-    # Calcul du taux de complétude global après filtration
-    total_cells_filtered = df_filtered.size
-    total_missing_filtered = df_filtered.isnull().sum().sum()
-
-    # Gestion du cas où le df filtré deviendrait vide
-    if total_cells_filtered > 0:
-        completeness_filtered = (
-            (total_cells_filtered - total_missing_filtered)
-            / total_cells_filtered
-        ) * 100
-    else:
-        completeness_filtered = 0.0
-
-    print(f"Complétude globale - {title}")
-    print(f"• Taux de complétude initial (toutes variables) : {completeness_initial:.2f}%")
-    print(f"• Taux de complétude après retrait des variables > 20% de NA : {completeness_filtered:.2f}%")
-    if len(cols_above_20) > 0:
-        print(f"  (Variables retirées ({len(cols_above_20)}) : {', '.join(cols_above_20)})")
-
-    # Préparation du graphique (uniquement sur les colonnes avec manquants)
-    missing_pct_plot = missing_pct_per_col[missing_pct_per_col > 0].sort_values(
-        ascending=False
-    )
-
-    if missing_pct_plot.empty:
-        print(f"Aucune valeur manquante détectée dans le dataset : {title}")
-        return
-
-    plt.figure(figsize=(15, 6))
-    sns.barplot(x=missing_pct_plot.index, y=missing_pct_plot.values, palette="Reds_r")
-
-    plt.title(f"{title} (%)", fontsize=14, weight="bold")
-    plt.ylabel("% de NaN")
-    plt.xticks(rotation=45, ha="right")
-
-    # Seuil d'alerte à 20%
-    plt.axhline(y=20, color="black", linestyle="--", label="Seuil critique (20%)")
-    plt.legend()
-
-    plt.tight_layout()
-    plt.show()
-
-
-
-def check_player_duplicates(df_players):
-    """
-    Identifie les doublons potentiels de joueurs en croisant le nom et la date de naissance.
-
-    Cette fonction effectue une vérification de l'intégrité du dataset en isolant les joueurs 
-    qui partagent exactement le même nom et la même date de naissance.
-
-    arguments:
-        df_players : Le dataset des joueurs contenant au minimum les colonnes 
-                            'name' et 'date_of_birth'.
-
-    returns:
-        dataframe: Un dataframe contenant toutes les lignes suspectées d'être des doublons, 
-                    triées par nom pour faciliter la comparaison manuelle.
-        None: Si aucune duplication n'est trouvée.
-    """
-    # On cherche les lignes où le nom et la date de naissance sont identiques
-    duplicates = df_players[df_players.duplicated(subset=['name', 'date_of_birth'], keep=False)]
-    
-    if not duplicates.empty:
-        print(f"{len(duplicates)} doublons potentiels détectés (même nom et date de naissance).")
-        return duplicates.sort_values(by='name')
-    else:
-        print("Aucun doublon de joueur détecté sur le combo Nom/Date de naissance.")
-        return None
-
 
 
 def get_latest_player_valuations(df_valuations, plot_freshness=True):
@@ -301,7 +195,6 @@ def get_latest_player_valuations(df_valuations, plot_freshness=True):
     # Affichage des statistiques
     print(f"Nombre total d'évaluations dans l'historique : {len(df)}")
     print(f"Nombre de joueurs uniques évalués : {df_latest['player_id'].nunique()}")
-    print("-" * 30)
     
     # On utilise .min() et .max() sur la colonne déjà convertie en datetime
     print(f"Date de l'évaluation la plus ancienne (historique) : {df['date'].min().date()}")
@@ -318,6 +211,106 @@ def get_latest_player_valuations(df_valuations, plot_freshness=True):
 
     return df_latest
 
+
+def check_all_missing_values(df, title="Valeurs manquantes par colonne"):
+    """Identifie et visualise le pourcentage de valeurs manquantes pour chaque 
+    colonne du DataFrame.
+
+    Cette fonction calcule le taux de complétude des données et génère un
+    graphique à barres présentant uniquement les colonnes contenant des valeurs
+    nulles. Elle inclut un seuil critique visuel à 20%.
+
+    arguments:
+        df : Le DataFrame à analyser.
+        title (str): Le titre personnalisé pour le graphique.
+                    Par défaut : "Valeurs manquantes par colonne".
+
+    returns:
+        None: La fonction affiche un message texte si aucune valeur manquante
+        n'est trouvée, ou un graphique le cas échéant.
+    """
+    # Calcul du taux de complétude global initial
+    total_cells = df.size
+    total_missing_initial = df.isnull().sum().sum()
+    completeness_initial = (
+        (total_cells - total_missing_initial) / total_cells
+    ) * 100
+
+    # Calcul du % de manquants par colonne pour le tri/graphique
+    missing_pct_per_col = (df.isnull().sum() / len(df)) * 100
+
+    # Identification des colonnes à exclure (au-dessus du seuil de 20%)
+    cols_above_20 = missing_pct_per_col[missing_pct_per_col > 20].index
+    df_filtered = df.drop(columns=cols_above_20)
+
+    # Calcul du taux de complétude global après filtration
+    total_cells_filtered = df_filtered.size
+    total_missing_filtered = df_filtered.isnull().sum().sum()
+
+    # Gestion du cas où le df filtré deviendrait vide
+    if total_cells_filtered > 0:
+        completeness_filtered = (
+            (total_cells_filtered - total_missing_filtered)
+            / total_cells_filtered
+        ) * 100
+    else:
+        completeness_filtered = 0.0
+
+    print(f"Complétude globale - {title}")
+    print(f"Taux de complétude initial (toutes variables) : {completeness_initial:.2f}%")
+    print(f"Taux de complétude après retrait des variables > 20% de NA : {completeness_filtered:.2f}%")
+    if len(cols_above_20) > 0:
+        print(f"{len(cols_above_20)} variables retirées  : {', '.join(cols_above_20)}")
+
+    # Préparation du graphique (uniquement sur les colonnes avec manquants)
+    missing_pct_plot = missing_pct_per_col[missing_pct_per_col > 0].sort_values(
+        ascending=False
+    )
+
+    if missing_pct_plot.empty:
+        print(f"Aucune valeur manquante détectée dans le dataset : {title}")
+        return
+
+    plt.figure(figsize=(15, 6))
+    sns.barplot(x=missing_pct_plot.index, y=missing_pct_plot.values, palette="Reds_r")
+
+    plt.title(f"{title} (%)", fontsize=14, weight="bold")
+    plt.ylabel("% de NaN")
+    plt.xticks(rotation=45, ha="right")
+
+    # Seuil d'alerte à 20%
+    plt.axhline(y=20, color="black", linestyle="--", label="Seuil critique (20%)")
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+
+def check_player_duplicates(df_players):
+    """
+    Identifie les doublons potentiels de joueurs en croisant le nom et la date de naissance.
+
+    Cette fonction effectue une vérification de l'intégrité du dataset en isolant les joueurs 
+    qui partagent exactement le même nom et la même date de naissance.
+
+    arguments:
+        df_players : Le dataset des joueurs contenant au minimum les colonnes 
+                            'name' et 'date_of_birth'.
+
+    returns:
+        dataframe: Un dataframe contenant toutes les lignes suspectées d'être des doublons, 
+                    triées par nom pour faciliter la comparaison manuelle.
+        None: Si aucune duplication n'est trouvée.
+    """
+    # On cherche les lignes où le nom et la date de naissance sont identiques
+    duplicates = df_players[df_players.duplicated(subset=['name', 'date_of_birth'], keep=False)]
+    
+    if not duplicates.empty:
+        print(f"{len(duplicates)} doublons détectés (même nom et date de naissance).")
+        return duplicates.sort_values(by='name')
+    else:
+        print("Aucun doublon de joueur détecté sur le combo nom/date de naissance.")
+        return None
 
 
 def check_referential_integrity(df_players, df_valuations):
@@ -340,21 +333,16 @@ def check_referential_integrity(df_players, df_valuations):
     # Identification des orphelins (présents dans prix mais pas dans profils)
     orphans = ids_in_valuations - ids_in_players
 
-
     print(f"Analyse de l'intégrité référentielle :")
-    print(f"- Joueurs dans le fichier Profil : {len(ids_in_players)}")
-    print(f"- Joueurs dans le fichier Valuations : {len(ids_in_valuations)}")
-    print("-" * 40)
+    print(f"Joueurs dans le fichier Profil : {len(ids_in_players)}")
+    print(f"Joueurs dans le fichier Valuations : {len(ids_in_valuations)}")
 
     if orphans:
-        print(f"Alerte : {len(orphans)} joueurs ont des prix mais n'ont pas de profil.")
-        print(f"Exemples d'IDs orphelins : {list(orphans)[:5]}")
+        print(f"{len(orphans)} joueurs ont des prix mais n'ont pas de profil.")
     else:
-        print("Intégrité parfaite : Tous les prix sont reliés à un profil joueur.")
+        print("Intégrité parfaite : tous les prix sont reliés à un profil joueur.")
     
     return orphans
-
-
 
 
 def audit_valuation_frequency(df_valuations):
@@ -363,7 +351,6 @@ def audit_valuation_frequency(df_valuations):
     par joueur et par saison.
 
     Une saison est définie du 1er juillet au 30 juin de l'année suivante.
-    Ex : saison 2022 = juillet 2022 → juin 2023.
 
     arguments:
         df_valuations: Le dataset historique des valuations contenant
@@ -378,20 +365,20 @@ def audit_valuation_frequency(df_valuations):
 
     updates = df.groupby(['player_id', 'season']).size().rename('n_updates')
 
-    # ── Graphique 1 : distribution du nombre de MAJ par joueur/saison ──
+    # Graphique 1 : distribution du nombre de mises à jour par joueur/saison
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     updates.value_counts().sort_index().plot(
         kind='bar', ax=axes[0], color='steelblue'
     )
-    axes[0].set_title("Nombre de MAJ de VM par joueur/saison")
+    axes[0].set_title("Nombre de mises à jour de valeur marchandes par joueur/saison")
     axes[0].set_xlabel("Nombre de mises à jour")
     axes[0].set_ylabel("Nombre de paires (joueur, saison)")
     axes[0].axvline(x=updates.median() - 1, color='red', linestyle='--',
                     label=f'Médiane : {int(updates.median())}')
     axes[0].legend()
 
-    # ── Graphique 2 : répartition par mois (quand les MAJ ont lieu) ──
+    # Graphique 2 : répartition par mois (quand les mises à jour ont lieu)
     df['month'] = df['date'].dt.month
     month_counts = df['month'].value_counts().sort_index()
     month_labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
@@ -406,16 +393,15 @@ def audit_valuation_frequency(df_valuations):
     plt.tight_layout()
     plt.show()
 
-    # ── Résumé textuel ──
-    print("Statistiques — mises à jour par joueur/saison :")
-    print(f"  Médiane  : {updates.median():.0f}")
-    print(f"  Moyenne  : {updates.mean():.2f}")
-    print(f"  Max      : {updates.max()}")
-    print(f"  1 seule MAJ  : {(updates == 1).sum():,} paires joueur/saison "
+    print("Statistiques sur les mises à jour par joueur/saison :")
+    print(f"    Médiane  : {updates.median():.0f}")
+    print(f"    Moyenne  : {updates.mean():.2f}")
+    print(f"    Max      : {updates.max()}")
+    print(f"    1 seule mise à jour     : {(updates == 1).sum():,} paires joueur/saison "
           f"({(updates == 1).mean() * 100:.1f}%)")
-    print(f"  2 MAJ        : {(updates == 2).sum():,} paires joueur/saison "
+    print(f"    2 mises à jour          : {(updates == 2).sum():,} paires joueur/saison "
           f"({(updates == 2).mean() * 100:.1f}%)")
-    print(f"  3+ MAJ       : {(updates >= 3).sum():,} paires joueur/saison "
+    print(f"    3 mises à jour ou plus  : {(updates >= 3).sum():,} paires joueur/saison "
           f"({(updates >= 3).mean() * 100:.1f}%)")
 
     return updates.reset_index()
@@ -423,7 +409,7 @@ def audit_valuation_frequency(df_valuations):
 
 def aggregate_valuations_by_season(df_valuations, method='latest'):
     """
-    Agrège les valeurs marchandes pour obtenir une VM unique par joueur et par saison.
+    Agrège les valeurs marchandes pour obtenir une valeur marchande unique par joueur et par saison.
 
     Étant donné la fréquence médiane de 2 mises à jour par saison (mercatos de
     juin et décembre), cette fonction permet de choisir la règle d'agrégation
@@ -476,12 +462,41 @@ def aggregate_valuations_by_season(df_valuations, method='latest'):
 
     result_cols = ['player_id', 'season', 'market_value_in_eur', 'date_ref']
     df_agg = df_agg[result_cols].sort_values(['player_id', 'season']).reset_index(drop=True)
-
+    
     print(f"Agrégation '{method}' terminée :")
     print(f"  Lignes avant : {len(df):,}")
-    print(f"  Lignes après : {len(df_agg):,}  (1 VM par joueur/saison)")
+    print(f"  Lignes après : {len(df_agg):,}  (1 valeur marchande par joueur/saison)")
     print(f"  Joueurs uniques : {df_agg['player_id'].nunique():,}")
-    saisons = sorted(df_agg['season'].unique().tolist())
-    print(f"Saisons couvertes : {saisons}")
 
     return df_agg
+
+
+def plot_log_valuations(df_season, df_mean, df_max, col="market_value_in_eur", bins=50, figsize=(18, 5)):
+    """
+    Affiche 3 histogrammes de la transformation log1p de la valeur marchandise (Dernière, Moyenne, Max).
+    
+    arguments:
+        df_season (pd.DataFrame): DataFrame contenant la valeur récente/par saison.
+        df_mean (pd.DataFrame): DataFrame contenant la valeur moyenne.
+        df_max (pd.DataFrame): DataFrame contenant la valeur maximale.
+        col (str): Nom de la colonne à analyser (par défaut "market_value_in_eur").
+        bins (int): Nombre de classes pour les histogrammes (par défaut 50).
+        figsize (tuple): Dimensions de la figure Matplotlib.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+
+    data_sources = [
+        (df_season, "Latest (log)", axes[0]),
+        (df_mean, "Mean (log)", axes[1]),
+        (df_max, "Max (log)", axes[2])
+    ]
+
+    for df, title, ax in data_sources:
+        ax.hist(np.log1p(df[col]), bins=bins, color="skyblue", edgecolor="black", alpha=0.7)
+        ax.set_title(title)
+        ax.set_xlabel(f"log(1 + {col})")
+        ax.set_ylabel("Fréquence")
+        ax.grid(True, linestyle="--", alpha=0.5)
+
+    plt.tight_layout()
+    plt.show()
