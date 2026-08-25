@@ -7,19 +7,20 @@ from git import Repo
 import pandas as pd
 import numpy as np
 import json
-import pathlib
 from pathlib import Path
 import soccerdata as sd
 import locale
 import requests
 from bs4 import BeautifulSoup
 import time
-import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 
 # Désactive la propagation des erreurs internes du module logging
 logging.raiseExceptions = False
+
+
+# Import des données Transfermarkt
 
 def download_kaggle_dataset(dataset_query, destination_folder):
     """
@@ -34,9 +35,9 @@ def download_kaggle_dataset(dataset_query, destination_folder):
         dataset_query (str): L'identifiant du dataset sur Kaggle.
         destination_folder (str): Le chemin du répertoire local où les fichiers seront enregistrés.
 
-    Returns:
+    returns:
         None: La fonction affiche l'état d'avancement dans la console et enregistre les 
-            fichiers directement sur le disque.
+              fichiers.
     """
     # On charge son identifiant et une clé Kaggle dans le but de s'identifier et utiliser
     # l'API Kaggle
@@ -63,110 +64,7 @@ def download_kaggle_dataset(dataset_query, destination_folder):
     print("Téléchargement correctement effectué !")
 
 
-
-def download_github_dataset(repo_url, data_path):
-    """
-    Clone un jeu de données hébergé sur un dépôt GitHub.
-
-    Cette fonction gère le cycle de vie du dataset local : elle effectue un 'clone' complet 
-    si le dossier est absent, ou un 'pull' (mise à jour) si le dépôt existe déjà. Cela 
-    permet de garantir que l'utilisateur travaille toujours avec la version la plus 
-    récente des données sans avoir à supprimer et retélécharger manuellement le projet.
-
-    arguments:
-        repo_url (str): L'URL distante du dépôt GitHub (HTTPS ou SSH).
-        data_path (str): Le chemin du répertoire local où le dataset doit être stocké.
-
-    returns:
-        None: La fonction gère les opérations Git en arrière-plan et affiche l'état 
-            de la synchronisation (création, mise à jour ou déjà à jour).
-    """
-
-    # Premier téléchargement des données
-    if not os.path.exists(data_path):
-        print("Premier téléchargement du dataset...")
-        Repo.clone_from(repo_url, data_path)
-        print("Téléchargement terminé !")
-    # Le dossier existe, on met à jour
-    else:
-        print("Le dossier existe déjà. Vérification des mises à jour...")
-        repo = Repo(data_path)
-        origin = repo.remotes.origin
-
-        # On récupère les changements sans tout écraser
-        info = origin.pull()
-
-        if info[0].flags & info[0].HEAD_UPTODATE:
-            print("Les données sont déjà à jour !")
-        else:
-            print("Nouvelles données récupérées avec succès.")
-
-
-
-import pandas as pd
-
-def download_football_data_datasets(annee_debut, annee_fin, leagues):
-    """
-    Télécharge, agrège et archive localement les données de plusieurs ligues et saisons.
-    """
-    # Génération automatique de la liste des saisons
-    seasons = [f"{str(annee)[2:]}{str(annee+1)[2:]}" for annee in range(annee_debut, annee_fin + 1)]
-
-    mapping = {
-        "GB1": "E0",
-        "ES1": "SP1",
-        "FR1": "F1",
-        "L1": "D1",
-        "IT1": "I1"
-    }
-
-    leagues = [
-        mapping[league]
-        for league in leagues
-    ]
-
-    # On crée une liste vide pour stocker les DataFrames
-    dfs = []
-
-    # On boucle les données de chaque championnat pour obtenir toutes les données
-    for league in leagues:
-        for season in seasons:
-            url = f"https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
-            
-            try:
-                # 1. On lit le CSV normalement
-                data = pd.read_csv(url)
-                
-                # 2. OPTIMISATION : .copy() défragmente la mémoire du DataFrame 
-                # et évite le PerformanceWarning lors de l'ajout de la colonne
-                data = data.copy()
-                data["league"] = league
-                
-                dfs.append(data)
-            except Exception as e:
-                # Optionnel : Évite de faire planter tout le script si une saison/ligue n'existe pas sur le site
-                print(f"Impossible de télécharger {league} pour la saison {season} : {e}")
-    
-    if not dfs:
-        print("Aucune donnée n'a pu être téléchargée.")
-        return
-
-    # On concatène les données de tous les championnats
-    full_data = pd.concat(dfs, ignore_index=True)
-
-    # On définit le chemin vers le dossier data
-    output_path = "../data/football_data.csv"
-
-    # On enregistre le fichier à cet endroit
-    full_data.to_csv(output_path, index=False)
-    print("Téléchargement terminé !")
-
-
-
-
-
-
-def players_filtered(players_path, appearances_path, annee_debut, annee_fin, leagues):
+def players_filtered(players_path, appearances_path, annee_debut, annee_fin, ligues):
     """
     Filtre le fichier des joueurs pour ne conserver que les joueurs ayant évolué dans l'un
     des championnats du Big 5 sur la période étudiée.
@@ -176,11 +74,10 @@ def players_filtered(players_path, appearances_path, annee_debut, annee_fin, lea
         appearances_path (str) : Chemin vers le fichier CSV contenant les apparitions en match.
         annee_debut (int) : Première saison incluse dans l'étude.
         annee_fin (int) : Dernière saison incluse dans l'étude.
-        leagues (list) : Liste des identifiants de compétitions correspondant au Big 5.
+        ligues (list) : Liste des identifiants de compétitions correspondant au Big 5.
 
     returns:
-        None
-            Le fichier est écrasé avec les données filtrées.
+        None : Le fichier est écrasé avec les données filtrées.
     """
 
     df_players = pd.read_csv(players_path)
@@ -195,7 +92,7 @@ def players_filtered(players_path, appearances_path, annee_debut, annee_fin, lea
     # Joueurs Big 5
     big5_players = set(
         df_app[
-            df_app["competition_id"].isin(leagues)
+            df_app["competition_id"].isin(ligues)
         ]["player_id"].unique()
     )
 
@@ -212,7 +109,7 @@ def players_filtered(players_path, appearances_path, annee_debut, annee_fin, lea
     )
 
 
-def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fin, leagues):
+def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fin, ligues):
     """
     Filtre le fichier des valeurs marchandes des joueurs pour ne conserver que les
     valorisations appartenant à la période étudiée et aux périodes durant lesquelles
@@ -224,11 +121,10 @@ def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fi
         appearances_path (str) : Chemin vers le fichier CSV contenant les apparitions en match.
         annee_debut (int) : Première saison incluse dans l'étude.
         annee_fin (int) : Dernière saison incluse dans l'étude.
-        leagues (list) : Liste des identifiants de compétitions correspondant au Big 5.
+        ligues (list) : Liste des identifiants de compétitions correspondant au Big 5.
 
     returns:
-        None
-            Le fichier est écrasé avec les données filtrées.
+        None : Le fichier est écrasé avec les données filtrées.
     """
 
     date_debut = pd.Timestamp(
@@ -242,7 +138,6 @@ def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fi
         month=6,
         day=30
     )
-
 
     # Lecture
     df_val = pd.read_csv(valuations_path)
@@ -260,7 +155,7 @@ def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fi
 
     # Apparitions Big 5
     df_big5 = df_app[
-        df_app["competition_id"].isin(leagues)
+        df_app["competition_id"].isin(ligues)
     ]
 
     # Intervalles par joueur
@@ -307,92 +202,22 @@ def valuations_filtered(valuations_path, appearances_path, annee_debut, annee_fi
     )
 
 
-
-
-def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name,
-                                 record_path=None, meta=None, columns_to_keep=None, recursive=False):
-    """
-    Compile et normalise des fichiers JSON StatsBomb en un fichier feather unique.
-
-    Cette fonction parcourt un répertoire (de manière récursive ou non) pour extraire les 
-    données JSON souvent imbriquées de StatsBomb. Elle utilise 'json_normalize' pour 
-    aplatir les structures complexes, injecte les identifiants de match manquants à partir 
-    des noms de fichiers et optimise le stockage final au format feather pour des lectures 
-    ultra-rapides lors des analyses futures.
-
-    arguments:
-        json_folder_path (str/Path): Chemin du dossier contenant les fichiers JSON.
-        output_folder_path (str/Path): Chemin où sauvegarder le fichier compilé.
-        output_name (str): Nom du fichier de sortie.
-        record_path (str/list, optional): Chemin vers les données imbriquées dans le JSON.
-        meta (list, optional): Liste des champs de métadonnées à inclure lors de la normalisation.
-        columns_to_keep (list, optional): Liste restreinte de colonnes à conserver pour réduire 
-                                        le poids du fichier.
-        recursive (bool): Si True, cherche également dans tous les sous-dossiers. Par défaut False.
-
-    returns:
-        None: La fonction sauvegarde le DataFrame consolidé sur le disque et affiche 
-            un résumé du traitement.
-    """
-    json_folder = Path(json_folder_path)
-    output_folder = Path(output_folder_path)
-    
-    if recursive:
-        json_files = list(json_folder.rglob("*.json"))
-    else:
-        json_files = list(json_folder.glob("*.json"))
-    
-    if not json_files:
-        msg = "dans les sous-dossiers" if recursive else "à la racine"
-        print(f"Aucun fichier JSON trouvé {msg} dans {json_folder_path}")
-        return
-    
-    output_folder.mkdir(parents=True, exist_ok=True)
-    output_path = output_folder / f"{output_name}.feather"
-
-    all_dfs = []
-    print(f"Traitement de {len(json_files)} fichiers trouvés dans {json_folder.name}...")
-
-    for file_path in json_files:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        df = pd.json_normalize(data, record_path=record_path, meta=meta, errors='ignore')
-        
-        if 'match_id' not in df.columns:
-            df['match_id'] = file_path.stem
-
-        if columns_to_keep:
-            cols = [c for c in columns_to_keep if c in df.columns]
-            df = df[cols].copy()
-        
-        all_dfs.append(df)
-
-    print(f"Fusion et sauvegarde...")
-    final_df = pd.concat(all_dfs, ignore_index=True)
-    final_df.columns = final_df.columns.astype(str)
-    
-    final_df.to_feather(output_path)
-    print(f"Terminé ! Fichier : {output_path.name} ({len(final_df)} lignes)")
-
-
-
+# Import des données Soccerdata (Understat et FBref)
 
 locale.setlocale(locale.LC_TIME, 'English_United States.1252')
 
-def get_understat_xg(start_season, end_season, leagues):
+def get_understat_data(start_season, end_season, ligues):
     """
     Récupère les statistiques avancées (xG, xA) des joueurs via le scraper Understat de Soccerdata.
 
     Cette fonction extrait les données de performance par saison pour les joueurs évoluant 
-    dans les ligues majeures européennes. Elle permet d'accéder à des métriques avancées ainsi que
-    les contributions à la création d'occasions (xGChain, xGBuildup).
+    dans les ligues majeures européennes.
 
     arguments:
         start_season (int): Année de début de la fenêtre (ex: 2020 pour la saison 2020-2021).
-        end_season (int): Année de fin de la fenêtre (incluse).
-        leagues (list, optional): Liste des championnats au format soccerdata. 
-                                Par défaut : les "Big Five" européens.
+        end_season (int): Année de fin de la fenêtre.
+        ligues (list, optional): Liste des championnats au format Soccerdata. 
+                                Par défaut : le "Big Five" européens.
 
     returns:
         pd.DataFrame: Un DataFrame indexé par joueur et saison contenant les statistiques 
@@ -406,24 +231,23 @@ def get_understat_xg(start_season, end_season, leagues):
         "IT1": "ITA-Serie A"
     }
 
-    leagues = [
-        mapping[league]
-        for league in leagues
+    ligues = [
+        mapping[ligue]
+        for ligue in ligues
     ]
 
     # Understat utilise l'année de début de saison (ex: 2020 pour 2020-21)
     seasons_list = list(range(start_season, end_season + 1))
 
-    print(f"Understat | Ligues : {leagues} | Saisons : {seasons_list}")
+    print(f"Récupération des données Understat pour les ligues : {ligues} et saisons : {seasons_list}")
 
     try:
-        understat = sd.Understat(leagues=leagues, seasons=seasons_list)
+        understat = sd.Understat(ligues=ligues, seasons=seasons_list)
         df = understat.read_player_season_stats()
 
         if df is not None and not df.empty:
             df = df.reset_index()
             print(f"{len(df)} lignes récupérées")
-            print(f"Colonnes : {df.columns.tolist()}")
             return df
         else:
             print("Dataframe vide")
@@ -454,7 +278,7 @@ def flatten_columns(df):
     return df
 
 
-def get_players_advanced_stats_range(start_season, end_season, leagues):
+def get_fbref_data(start_season, end_season, ligues):
     """
     Récupère et fusionne l'intégralité des statistiques détaillées des joueurs via FBref.
 
@@ -466,8 +290,7 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
     arguments:
         start_season (int): Année civile de début (ex: 2022).
         end_season (int): Année civile de fin (incluse).
-        leagues (list): Liste des championnats au format soccerdata. 
-                        Par défaut : ['FRA-Ligue 1'].
+        ligues (list): Liste des championnats au format Soccerdata.
 
     returns:
         dataframe: Un dataset consolidé où chaque ligne représente un joueur par saison/équipe, 
@@ -482,9 +305,9 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
         "IT1": "ITA-Serie A"
     }
 
-    leagues = [
-        mapping[league]
-        for league in leagues
+    ligues = [
+        mapping[ligue]
+        for ligue in ligues
     ]
 
 
@@ -501,10 +324,10 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
         next_year = str(year + 1)[-2:]
         seasons_list.append(f"{str(year)[-2:]}-{next_year}")
 
-    print(f"Ligues : {leagues} | Saisons : {seasons_list}")
+    print(f"Récupération des données FBref pour les ligues : {ligues} et saisons : {seasons_list}")
 
     try:
-        fbref = sd.FBref(leagues=leagues, seasons=seasons_list)
+        fbref = sd.FBref(ligues=ligues, seasons=seasons_list)
         all_stats = {}
 
         for stat in stat_types:
@@ -514,13 +337,6 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
                 if df is not None and not df.empty:
                     df = flatten_columns(df.reset_index())
                     all_stats[stat] = df
-
-                    # Affiche les colonnes xG si présentes
-                    xg_cols = [c for c in df.columns if 'xG' in c or 'xA' in c or 'npxG' in c or 'Expected' in c]
-                    if xg_cols:
-                        print(f"     {len(df)} lignes")
-                    else:
-                        print(f"     {len(df)} lignes")
                 else:
                     print(f"     Vide")
             except Exception as e:
@@ -543,9 +359,7 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
             print(f"  Fusion '{stat}' : {df_final.shape[1]} colonnes")
 
         # Résumé des colonnes xG dans le dataset final
-        xg_final = [c for c in df_final.columns if any(x in c for x in ['xG', 'xA', 'npxG', 'Expected'])]
-        print(f"\nColonnes xG dans le dataset final : {xg_final}")
-        print(f"Dataset final : {df_final.shape[0]} lignes x {df_final.shape[1]} colonnes")
+        print(f"Format du dataset final : {df_final.shape[0]} lignes et {df_final.shape[1]} colonnes")
         return df_final
 
     except Exception as e:
@@ -553,14 +367,13 @@ def get_players_advanced_stats_range(start_season, end_season, leagues):
         return pd.DataFrame()
 
 
-
 def merge_fbref_understat(df_fbref, df_understat, output_path=None):
     """
     Nettoie, dédoublonne et fusionne les données FBref et Understat.
     
     arguments:
-        df_fbref : Dataset de base (FBref)
-        df_understat : Dataset contenant les xG (Understat)
+        df_fbref : Dataset FBref
+        df_understat : Dataset Understat
         output_path (str, optional): Chemin pour sauvegarder le CSV final.
         
     returns:
@@ -572,8 +385,6 @@ def merge_fbref_understat(df_fbref, df_understat, output_path=None):
     cols_to_keep = keys + ['xg', 'xa', 'np_xg', 'xg_chain', 'xg_buildup']
     
     df_xg_clean = df_understat.drop_duplicates(subset=keys).copy()
-    
-    print(f"Dédoublonnage Understat : {len(df_understat)} -> {len(df_xg_clean)} lignes.")
 
     # Harmonisation des types pour les colonnes clés
     # On s'assure que la saison est en entier et les chaînes en minuscules/sans espaces
@@ -593,7 +404,6 @@ def merge_fbref_understat(df_fbref, df_understat, output_path=None):
     # Statistiques de contrôle
     coverage = df_merged['xg'].notna().mean()
     print(f"Fusion terminée : {df_merged.shape[0]} lignes et {df_merged.shape[1]} colonnes.")
-    print(f"Taux de correspondance xG (Coverage) : {coverage:.1%}")
 
     # Sauvegarde
     if output_path:
@@ -603,13 +413,11 @@ def merge_fbref_understat(df_fbref, df_understat, output_path=None):
     return df_merged
 
 
-
-# Pour le chargement des données de blessures Transfermarkt
-
+# Import des données de blessures Transfermarkt
 
 class TransfermarktInjuryScraper:
 
-    # Mapping code → slug pour construire les URLs correctement
+    # Slug pour construire les URLs correctement
     LEAGUE_SLUGS = {
         "FR1": "ligue-1",
         "GB1": "premier-league",
@@ -647,9 +455,9 @@ class TransfermarktInjuryScraper:
         return None
     
     def _get_soup_slow(self, url: str, retries: int = 5):
-        """Version lente pour la cartographie (pas de parallélisme)."""
+        """Version lente."""
         for attempt in range(retries):
-            time.sleep(2 + attempt * 3)  # 2s, 5s, 8s, 11s, 14s
+            time.sleep(2 + attempt * 3)
             try:
                 r = self.session.get(url, headers=self.headers, timeout=15)
                 if r.status_code == 200:
@@ -781,26 +589,20 @@ class TransfermarktInjuryScraper:
         return injuries
 
 
-def run_top5_injury_scraping(
-    annee_debut: int,
-    annee_fin:   int,
-    output_file: str,
-    leagues=None,
-    max_threads: int = 10,
-) -> pd.DataFrame:
+def scraping_blessures_transfermarkt(annee_debut: int, annee_fin: int, output_file: str, ligues=None,
+    max_threads: int = 10) -> pd.DataFrame:
 
-    if leagues is None:
-        leagues = {"FR1", "GB1", "L1", "IT1", "ES1"}
-    if isinstance(leagues, dict):
-        league_codes = set(leagues.values())
+    if ligues is None:
+        ligues = {"FR1", "GB1", "L1", "IT1", "ES1"}
+    if isinstance(ligues, dict):
+        league_codes = set(ligues.values())
     else:
-        league_codes = set(leagues)
+        league_codes = set(ligues)
 
     scraper = TransfermarktInjuryScraper(max_workers=max_threads)
     annees  = range(annee_debut, annee_fin + 1)
 
-    # Étape 1 et 2 : cartographie clubs + joueurs
-    print(f"  Étape 1/3 — Cartographie clubs et joueurs ({annee_debut}→{annee_fin})")
+    print(f"Cartographie clubs et joueurs ({annee_debut} à {annee_fin})")
 
     all_players: dict = {}
     valid_pairs: set  = set()
@@ -823,16 +625,16 @@ def run_top5_injury_scraping(
                         all_players[pid] = p
                     valid_pairs.add((pid, saison_str))
 
-    print(f"\n  {len(all_players)} joueurs uniques | {len(valid_pairs)} paires joueur/saison")
+    print(f"\n  Cartographie terminée : {len(all_players)} joueurs uniques et {len(valid_pairs)} paires joueur/saison")
 
-    # Étape 3 : scraping des blessures
-    print(f"  Étape 2/3 — Scraping des blessures ({len(all_players)} joueurs)")
+
+    print(f"Scraping des blessures de {len(all_players)} joueurs")
 
     with ThreadPoolExecutor(max_workers=scraper.max_workers) as executor:
         results = list(executor.map(scraper.get_player_injuries, list(all_players.values())))
 
     all_injuries = [inj for res in results for inj in res]
-    print(f"  {len(all_injuries)} blessures brutes récupérées")
+    print(f"{len(all_injuries)} blessures brutes récupérées")
 
     # Étape 4 : filtrage sur les saisons D1
     def saison_courte(s: str) -> str:
@@ -845,10 +647,10 @@ def run_top5_injury_scraping(
         inj for inj in all_injuries
         if (inj["player_id"], saison_courte(inj["Saison"])) in valid_pairs
     ]
-    print(f"  → {len(filtered)} blessures après filtrage D1")
+    print(f"{len(filtered)} blessures dans les championnats du Big 5 après filtrage sur les saisons")
 
-    # Étape 5 : sauvegarde
-    print(f"  Étape 3/3 — Sauvegarde → {output_file}")
+
+    print(f"Sauvegardes à l'emplacement {output_file}")
 
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
 
@@ -883,125 +685,73 @@ def run_top5_injury_scraping(
     return df
 
 
+# Import des données football-data.co.uk
 
+def download_football_data_datasets(annee_debut: int, annee_fin: int, ligues: list):
+    """
+    Télécharge, agrège et archive localement les données de plusieurs ligues et saisons.
+    """
+    # Génération automatique de la liste des saisons
+    seasons = [f"{str(annee)[2:]}{str(annee+1)[2:]}" for annee in range(annee_debut, annee_fin + 1)]
 
-# Données SoFIFA
+    mapping = {
+        "GB1": "E0",
+        "ES1": "SP1",
+        "FR1": "F1",
+        "L1": "D1",
+        "IT1": "I1"
+    }
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger(__name__)
+    ligues = [
+        mapping[league]
+        for league in ligues
+    ]
 
-BASE_URL = "https://sofifa.com"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8",
-    "Referer": "https://sofifa.com/",
-}
+    # On crée une liste vide pour stocker les DataFrames
+    dfs = []
 
-# Mapping entre vos codes de notebook et les IDs SoFIFA
-SOFIFA_LEAGUES = {
-    "GB1": {"id": 13, "nom": "Premier League"},
-    "ES1": {"id": 53, "nom": "La Liga"},
-    "L1":  {"id": 19, "nom": "Bundesliga"},
-    "IT1": {"id": 31, "nom": "Serie A"},
-    "FR1": {"id": 16, "nom": "Ligue 1"},
-}
-
-# Mapping de l'année de début de saison vers l'ID de version SoFIFA
-SOFIFA_SAISONS = {
-    2025: {"label": "FC 26 (2025-26)",   "version": 260052},
-    2024: {"label": "FC 25 (2024-25)",   "version": 250044},  
-    2023: {"label": "FC 24 (2023-24)",   "version": 240048},  
-    2022: {"label": "FIFA 23 (2022-23)", "version": 230053},  
-    2021: {"label": "FIFA 22 (2021-22)", "version": 220052},  
-    2020: {"label": "FIFA 21 (2020-21)", "version": 210056},  
-}
-
-def parse_table(soup: BeautifulSoup, league: str, saison: str) -> list[dict]:
-    table = soup.find("table")
-    if not table or not table.find("tbody"):
-        return []
-    players = []
-    for row in table.find("tbody").find_all("tr"):
-        cols = row.find_all("td")
-        if len(cols) < 8:
-            continue
-        try:
-            name_a    = cols[1].find("a", href=lambda h: h and "/player/" in h)
-            href      = name_a["href"] if name_a else ""
-            name      = name_a.get_text(strip=True) if name_a else "N/A"
-            pid       = href.split("/")[2] if href else ""
-            pos_tags  = cols[1].find_all("a", href=lambda h: h and "position" in h)
-            positions = "/".join(p.get_text(strip=True) for p in pos_tags) or "N/A"
-            club_a    = row.find("a", href=lambda h: h and "/team/" in h)
-            club      = club_a.get_text(strip=True) if club_a else "N/A"
-
-            players.append({
-                "saison":    saison,
-                "ligue":     league,
-                "id":        pid,
-                "nom":       name,
-                "positions": positions,
-                "age":       cols[2].get_text(strip=True),
-                "overall":   cols[3].get_text(strip=True),
-                "potentiel": cols[4].get_text(strip=True),
-                "club":      club,
-                "valeur":    cols[6].get_text(strip=True) if len(cols) > 6 else "",
-                "salaire":   cols[7].get_text(strip=True) if len(cols) > 7 else "",
-                "url":       BASE_URL + href,
-            })
-        except Exception:
-            pass
-    return players
-
-def scrape_one(league_code: str, league_id: int, league_name: str, saison_label: str, version: int) -> list[dict]:
-    all_players, offset, page = [], 0, 1
-    seen_ids = set()
-
-    with requests.Session() as session:
-        session.headers.update(HEADERS)
-        while page <= 15:
-            params = {"r": version, "set": "true", "lg": league_id, "offset": offset}
+    # On boucle les données de chaque championnat pour obtenir toutes les données
+    for league in ligues:
+        for season in seasons:
+            url = f"https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
+            
             try:
-                resp = session.get(f"{BASE_URL}/players", params=params, timeout=15)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.text, "html.parser")
-            except requests.RequestException as e:
-                log.warning(f"[{league_name} | {saison_label}] page {page} : {e}")
-                break
+                # On lit le CSV normalement
+                data = pd.read_csv(url)
 
-            players = parse_table(soup, league_name, saison_label)
-            if not players:
-                break
+                # On ajoute une colonne pour indiquer le championnat
+                data = data.copy()
+                data["league"] = league
+                
+                dfs.append(data)
+                print(f"Téléchargement réussi pour {league} saison {season} : {len(data)} lignes")
+            except Exception as e:
+                print(f"Impossible de télécharger {league} pour la saison {season} : {e}")
+    
+    if not dfs:
+        print("Aucune donnée n'a pu être téléchargée.")
+        return
 
-            current_ids = {p["id"] for p in players if p["id"]}
-            if current_ids and current_ids.issubset(seen_ids):
-                break
+    # On concatène les données de tous les championnats
+    full_data = pd.concat(dfs, ignore_index=True)
 
-            seen_ids.update(current_ids)
-            for p in players:
-                p["code_ligue_origine"] = league_code # Garde une trace de votre code ('GB1'...)
-            all_players.extend(players)
+    # On définit le chemin vers le dossier data
+    output_path = "../data/football_data.csv"
 
-            if len(players) < 60:
-                break
-
-            offset += 60
-            page   += 1
-            time.sleep(random.uniform(0.5, 1.2))
-
-    log.info(f"[{league_name} | {saison_label}] Total : {len(all_players)} joueurs")
-    return all_players
+    # On enregistre le fichier à cet endroit
+    full_data.to_csv(output_path, index=False)
+    print("Téléchargement terminé !")
 
 
-# Données du classement FIFA
+
+# Import des données du classement FIFA
 
 def extraire_classement_fin_saison(
-    df_fifa, nombre_equipes=10, annee_debut=2020, annee_fin=None
+    df_fifa: pd.DataFrame, nombre_equipes: int = 10, annee_debut: int = 2020, annee_fin: int = None
 ):
-    """Prend en paramètre un DataFrame brut du classement FIFA,
-
-    calcule les fins de saisons (septembre à août) entre l'année de début et l'année de fin spécifiées,
-    et retourne le Top X mondial de fin de saison.
+    """Prend en paramètre un DataFrame brut du classement FIFA, calcule les fins de saisons 
+    (septembre à août) entre l'année de début et l'année de fin spécifiées, et retourne le Top X mondial
+    de fin de saison.
     """
     # Copie locale pour éviter de modifier le DataFrame d'origine
     df = df_fifa.copy()
@@ -1032,7 +782,7 @@ def extraire_classement_fin_saison(
     # Tri par date pour mettre la plus récente d'une saison à la fin
     df = df.sort_values(by="rank_date")
 
-    # On regroupe par Saison et par Pays, et on garde la DERNIÈRE ligne disponible
+    # On regroupe par saison et par pays, et on garde la dernière ligne disponible
     df_fin_saison = df.drop_duplicates(
         subset=["saison", "country_full"], keep="last"
     ).copy()
@@ -1047,4 +797,113 @@ def extraire_classement_fin_saison(
 
     return df_fin_saison
 
+
+
+
+
+# ANNEXES
+
+# Import des données Statsbomb
     
+def download_github_dataset(repo_url, data_path):
+    """
+    Clone un jeu de données hébergé sur un dépôt GitHub.
+
+    Cette fonction gère le cycle de vie du dataset local : elle effectue un 'clone' complet 
+    si le dossier est absent, ou un 'pull' (mise à jour) si le dépôt existe déjà. Cela 
+    permet de garantir que l'utilisateur travaille toujours avec la version la plus 
+    récente des données sans avoir à supprimer et retélécharger manuellement le projet.
+
+    arguments:
+        repo_url (str): L'URL distante du dépôt GitHub (HTTPS ou SSH).
+        data_path (str): Le chemin du répertoire local où le dataset doit être stocké.
+
+    returns:
+        None: La fonction gère les opérations Git en arrière-plan et affiche l'état 
+            de la synchronisation (création, mise à jour ou déjà à jour).
+    """
+
+    # Premier téléchargement des données
+    if not os.path.exists(data_path):
+        print("Premier téléchargement du dataset...")
+        Repo.clone_from(repo_url, data_path)
+        print("Téléchargement terminé !")
+    # Le dossier existe, on met à jour
+    else:
+        print("Le dossier existe déjà. Vérification des mises à jour...")
+        repo = Repo(data_path)
+        origin = repo.remotes.origin
+
+        # On récupère les changements sans tout écraser
+        info = origin.pull()
+
+        if info[0].flags & info[0].HEAD_UPTODATE:
+            print("Les données sont déjà à jour !")
+        else:
+            print("Nouvelles données récupérées avec succès.")
+
+def compile_statsbomb_to_feather(json_folder_path, output_folder_path, output_name,
+                                 record_path=None, meta=None, columns_to_keep=None, recursive=False):
+    """
+    Compile et normalise des fichiers JSON StatsBomb en un fichier feather unique.
+
+    Cette fonction parcourt un répertoire (de manière récursive ou non) pour extraire les 
+    données JSON souvent imbriquées de StatsBomb. Elle utilise 'json_normalize' pour 
+    aplatir les structures complexes, injecte les identifiants de match manquants à partir 
+    des noms de fichiers et optimise le stockage final au format feather pour des lectures 
+    ultra-rapides lors des analyses futures.
+
+    arguments:
+        json_folder_path (str/Path): Chemin du dossier contenant les fichiers JSON.
+        output_folder_path (str/Path): Chemin où sauvegarder le fichier compilé.
+        output_name (str): Nom du fichier de sortie.
+        record_path (str/list, optional): Chemin vers les données imbriquées dans le JSON.
+        meta (list, optional): Liste des champs de métadonnées à inclure lors de la normalisation.
+        columns_to_keep (list, optional): Liste restreinte de colonnes à conserver pour réduire 
+                                        le poids du fichier.
+        recursive (bool): Si True, cherche également dans tous les sous-dossiers. Par défaut False.
+
+    returns:
+        None: La fonction sauvegarde le DataFrame consolidé sur le disque et affiche 
+            un résumé du traitement.
+    """
+    json_folder = Path(json_folder_path)
+    output_folder = Path(output_folder_path)
+    
+    if recursive:
+        json_files = list(json_folder.rglob("*.json"))
+    else:
+        json_files = list(json_folder.glob("*.json"))
+    
+    if not json_files:
+        msg = "dans les sous-dossiers" if recursive else "à la racine"
+        print(f"Aucun fichier JSON trouvé {msg} dans {json_folder_path}")
+        return
+    
+    output_folder.mkdir(parents=True, exist_ok=True)
+    output_path = output_folder / f"{output_name}.feather"
+
+    all_dfs = []
+    print(f"Traitement de {len(json_files)} fichiers trouvés dans {json_folder.name}...")
+
+    for file_path in json_files:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        df = pd.json_normalize(data, record_path=record_path, meta=meta, errors='ignore')
+        
+        if 'match_id' not in df.columns:
+            df['match_id'] = file_path.stem
+
+        if columns_to_keep:
+            cols = [c for c in columns_to_keep if c in df.columns]
+            df = df[cols].copy()
+        
+        all_dfs.append(df)
+
+    print(f"Fusion et sauvegarde...")
+    final_df = pd.concat(all_dfs, ignore_index=True)
+    final_df.columns = final_df.columns.astype(str)
+    
+    final_df.to_feather(output_path)
+    print(f"Terminé ! Fichier : {output_path.name} ({len(final_df)} lignes)")
