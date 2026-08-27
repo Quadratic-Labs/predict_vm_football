@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-def generer_feature_engineering_football(df):
+def generer_feature_engineering(df):
     """Calcule et ajoute des variables explicatives complexes (ratios tactiques,
 
     tendances inter-saisons, statut de l'âge et contexte équipe) au DataFrame
@@ -38,30 +38,23 @@ def generer_feature_engineering_football(df):
             0,
         )
 
-    # Indice de menace de gardien (Taille * Efficacité des arrêts pour GK)
+    # Indice de menace de gardien
     if "Performance_Save%" in df_fe.columns and "height_in_cm" in df_fe.columns:
-        df_fe["taux_arretXtaille_gardien"] = (
-            df_fe["Performance_Save%"] / 100.0
-        ) * df_fe["height_in_cm"]
+        df_fe["taux_arretXtaille_gardien"] = ( df_fe["Performance_Save%"] / 100.0 ) * df_fe["height_in_cm"]
 
-    # Ratio de Danger Converti (Efficacité devant le but : Buts réels / xG attendus)
+    # Ratio de danger converti
     if "Performance_Gls" in df_fe.columns and "xg" in df_fe.columns:
-        df_fe["efficacite_devant_but"] = np.where(
-            df_fe["Performance_Gls"] > 0,
-            df_fe["xg"] / df_fe["Performance_Gls"],
-            9.0,  # Valeur de 9.0 si pas de buts
-        )
+        df_fe["efficacite_devant_but"] = np.where( df_fe["Performance_Gls"] > 0, df_fe["xg"] / df_fe["Performance_Gls"], 9.0)
 
     if "player" in df_fe.columns and "season_year" in df_fe.columns:
         
         # On récupère l'année de la saison de la ligne précédente pour chaque joueur
         df_fe["saison_precedente_reelle"] = df_fe.groupby("player")["season_year"].shift(1)
         
-        # On crée un masque booléen : True si la ligne précédente est bien la saison N-1
-        # (Si le joueur a un trou dans sa carrière, la condition sera False)
+        # True si la ligne précédente est bien la saison N-1
         saison_consecutive = (df_fe["season_year"] - df_fe["saison_precedente_reelle"]) == 1
 
-        # Tendance du temps de jeu (Delta minutes)
+        # Tendance du temps de jeu
         if "Playing Time_Min" in df_fe.columns:
             # On récupère la valeur précédente
             minutes_prec = df_fe.groupby("player")["Playing Time_Min"].shift(1)
@@ -69,7 +62,7 @@ def generer_feature_engineering_football(df):
             # On calcule le delta brut
             df_fe["delta_minutes_jouees"] = df_fe["Playing Time_Min"] - minutes_prec
             
-            # Si ce n'est pas consécutif, on force à 0 (ou on laisse le joueur neutre)
+            # Si ce n'est pas consécutif, on force à 0
             df_fe["delta_minutes_jouees"] = np.where(saison_consecutive, df_fe["delta_minutes_jouees"], 0)
             
             # Gestion des NaN pour la toute première saison connue du joueur
@@ -93,22 +86,13 @@ def generer_feature_engineering_football(df):
         df_fe.drop(columns=["saison_precedente_reelle"], inplace=True)
 
     # Poids offensif du joueur (Buts + Passes Décisives du joueur / Total Buts de l'équipe)
-    if all(
-        c in df_fe.columns
-        for c in ["Performance_Gls", "Performance_Ast", "team", "season_year"]
-    ):
+    if all( c in df_fe.columns for c in ["Performance_Gls", "Performance_Ast", "team", "season_year"] ):
         # Somme des buts de l'équipe par saison
-        buts_equipe = (
-            df_fe.groupby(["team", "season_year"])["Performance_Gls"]
-            .sum()
-            .reset_index()
-        )
+        buts_equipe = ( df_fe.groupby(["team", "season_year"])["Performance_Gls"] .sum() .reset_index() )
         buts_equipe.columns = ["team", "season_year", "total_buts_equipe"]
 
         # Fusion
-        df_fe = pd.merge(
-            df_fe, buts_equipe, on=["team", "season_year"], how="left"
-        )
+        df_fe = pd.merge( df_fe, buts_equipe, on=["team", "season_year"], how="left" )
 
         # Calcul du ratio d'implication
         df_fe["contribution_offensive_equipe"] = np.where(
@@ -128,14 +112,10 @@ def generer_feature_engineering_football(df):
         df_fe["taux_indisponibilite_prec"] = df_fe.groupby("player")["taux_indisponibilite"].shift(1).fillna(0)
         
         # Indicateur de fragilité récurrente (Blessé deux saisons de suite)
-        df_fe["fragilite_chronique"] = np.where(
-            (df_fe["taux_indisponibilite"] > 0.15) & (df_fe["taux_indisponibilite_prec"] > 0.15), 
-            1, 
-            0
-        )
+        df_fe["fragilite_chronique"] = np.where( (df_fe["taux_indisponibilite"] > 0.15) & (df_fe["taux_indisponibilite_prec"] > 0.15), 1, 0 )
+
 
     # Score lié à la nation
-    # On initialise le score à 0
     df_fe["score_hype_nation"] = 0
 
     # Boucle pour calculer dynamiquement la somme pondérée : (11 - i) * classement_FIFA_i
@@ -160,6 +140,7 @@ def generer_feature_engineering_football(df):
         df_fe["urgence_contractuelle"] = np.where(
             df_fe["contrat_jours_restants"] <= 365, 1, 0
         )
+
     
     # Indice d'impact de points (buts par match pondérés par les points d'équipe)
     if "Performance_Gls" in df_fe.columns and "Team Success_PPM" in df_fe.columns and "Playing Time_MP" in df_fe.columns:
@@ -190,6 +171,7 @@ def generer_feature_engineering_football(df):
             )
             df_fe.drop(columns=["score_indiscipline_brut"], inplace=True)
 
+
     # Part des buts marqués hors penalty
     if "Performance_Gls" in df_fe.columns and "Performance_PK" in df_fe.columns:
         df_fe["ratio_buts_hors_penalty"] = np.where(
@@ -209,7 +191,6 @@ def generer_feature_engineering_football(df):
     colonnes_postes = [c for c in df_fe.columns if c.startswith("pos_")]
 
     if colonnes_postes:
-        print(f"Colonnes de postes détectées pour la polyvalence : {colonnes_postes}")
         # On fait la somme horizontale (.sum(axis=1)) des colonnes de postes.
         # Si un joueur est à la fois MF (1) et FW (1), la somme fera 2.
         df_fe["est_polyvalent"] = df_fe[colonnes_postes].sum(axis=1) - 1
@@ -253,12 +234,11 @@ def generer_feature_engineering_football(df):
             if confed_col in df_fe.columns:
                 is_continental |= (df_fe[confed_col] == 1) & df_fe["season_year"].isin(years)
 
-        # Résultat : 1 si Coupe du Monde OU Coupe Continentale, sinon 0
+        # Résultat : 1 si Coupe du Monde ou Coupe Continentale, sinon 0
         df_fe["competition_internationale"] = (is_world_cup | is_continental).astype(int)
 
     print()
-    print(
-        f"Feature Engineering terminé ! Nombre total de colonnes : {df_fe.shape[1]}"
-    )
+    print( f"Feature Engineering terminé ! Nombre total de colonnes : {df_fe.shape[1]}" )
+    print()
 
     return df_fe
