@@ -2,12 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
-from scipy.stats import pearsonr
-from sklearn.linear_model import LinearRegression
 import warnings
 from pathlib import Path
-from scipy.stats import pearsonr
 from matplotlib.ticker import FuncFormatter
 
 warnings.filterwarnings("ignore")
@@ -39,22 +35,6 @@ dossier_sortie = Path("../outputs/eda")
 dossier_sortie.mkdir(exist_ok=True)
 
 
-def analyser_types(df):
-    """Affiche le nombre de variables par type (numériques/catégorielles)
-
-    ainsi que les statistiques descriptives des variables numériques.
-    """
-    print("Analyse des types de variables")
-
-    # Extraction des colonnes par type
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
-
-    # Affichage des comptes
-    print(f"Variables numériques   : {len(num_cols)}")
-    print(f"Variables catégorielles: {len(cat_cols)}")
-
-
 def analyser_valeurs_manquantes(df, dossier_sauvegarde=None):
     """Calcule les valeurs manquantes d'un DataFrame, affiche le récapitulatif
 
@@ -75,8 +55,8 @@ def analyser_valeurs_manquantes(df, dossier_sauvegarde=None):
     df_missing_only = missing[missing["nb_missing"] > 0]
 
     if df_missing_only.empty:
-        print("Parfait ! Aucune valeur manquante détectée.")
-        return  # On arrête la fonction ici puisqu'il n'y a rien à tracer
+        print("Aucune valeur manquante détectée.")
+        return
 
     print(df_missing_only.to_string())
 
@@ -125,15 +105,12 @@ def analyser_variable_cible(df, target_col="valeur_marchande", dossier_sauvegard
 
     # Affichage des statistiques descriptives
     print(vm.describe().apply(lambda x: f"{x:,.0f}"))
-    print(f"\nSkewness : {vm.skew():.2f}")
-    print(f"Kurtosis : {vm.kurt():.2f}")
 
     # Création des graphiques
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle(f"Distribution de la variable : {target_col}", fontsize=14, fontweight="bold")
 
     # Graphique 1 : Distribution brute (conversion en millions si les valeurs sont grandes)
-    # Note : On divise par 1e6 les valeurs financières brutes (ex: 5 000 000 €)
     axes[0].hist(vm / 1e6, bins=80, color="#61AFEF", edgecolor="white", linewidth=0.3)
     axes[0].set_xlabel(f"{target_col} (M€)")
     axes[0].set_title("Distribution brute")
@@ -247,7 +224,7 @@ def analyser_distributions_numeriques(df, cols_a_analyser=None, dossier_sauvegar
     plt.show()
 
 
-def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
+def analyser_repartitions(df, target_col, dossier_sauvegarde=None):
     """Analyse les variables catégorielles du DataFrame : affiche les comptages textuels,
     génère les graphiques de répartition et croise les catégories avec la variable cible (boxplots).
     Gère la colonne 'league' encodée en One-Hot (league_*).
@@ -268,7 +245,7 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
 
     # Affichage textuel pour les ligues encodées (somme des 1)
     if cols_league:
-        print(f"\nleague ({len(cols_league)} modalités encodées) :")
+        print(f"\nligue ({len(cols_league)} modalités encodées) :")
         # On fait la somme des 1 pour chaque colonne et on nettoie le nom pour l'affichage
         vc_league = pd.Series({c.replace("league_", ""): df[c].sum() for c in cols_league})
         vc_league = vc_league.sort_values(ascending=False)
@@ -296,18 +273,18 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
         plt.show()
 
     # Graphique : Répartition Poste
-    if "pos" in df.columns:
-        vc = df["pos"].value_counts()
+    if "position" in df.columns:
+        vc = df["position"].value_counts()
         fig, ax = plt.subplots(figsize=(10, 4))
         vc.plot(kind="bar", ax=ax, color="#61AFEF")
-        ax.set_title("Répartition : pos")
+        ax.set_title("Répartition : position")
         ax.set_ylabel("Count")
         plt.xticks(rotation=30, ha="right")
         plt.tight_layout()
         
         if sauvegarder:
-            plt.savefig(chemin_dossier / "pos.png")
-            print("pos.png sauvegardé")
+            plt.savefig(chemin_dossier / "position.png")
+            print("position.png sauvegardé")
         plt.show()
 
     # Graphique : Répartition Championnat (version One-Hot)
@@ -317,7 +294,7 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
         
         fig, ax = plt.subplots(figsize=(10, 4))
         league_counts.plot(kind="bar", ax=ax, color="#61AFEF")
-        ax.set_title("Répartition : league (One-Hot)")
+        ax.set_title("Répartition : ligue")
         ax.set_ylabel("Count")
         plt.xticks(rotation=30, ha="right")
         plt.tight_layout()
@@ -331,129 +308,6 @@ def analyser_variables_categorielles(df, target_col, dossier_sauvegarde=None):
     if target_col not in df.columns:
         print(f"\n[Poste / League vs Cible] Annulé : La colonne cible '{target_col}' est absente.")
         return
-
-    # Boxplot : Variable Cible par Poste
-    if "pos" in df.columns:
-        df_pos = df[[target_col, "pos"]].dropna()
-        if not df_pos.empty:
-            order = df_pos.groupby("pos")[target_col].median().sort_values(ascending=False).index
-            fig, ax = plt.subplots(figsize=(14, 5))
-            groups = [df_pos.loc[df_pos["pos"] == p, target_col].values / 1e6 for p in order]
-            ax.boxplot(groups, labels=order, patch_artist=True,
-                       boxprops=dict(facecolor="#98C379", alpha=0.5))
-            ax.set_title("Valeur Marchande par poste (Trié par médiane décroissante)")
-            ax.set_ylabel("VM (M€)")
-            plt.xticks(rotation=30, ha="right")
-            plt.tight_layout()
-            
-            if sauvegarder:
-                plt.savefig(chemin_dossier / "vm_par_pos.png")
-                print("vm_par_pos.png sauvegardé")
-            plt.show()
-
-    # Boxplot : Variable Cible par Championnat (reconstitué depuis le One-Hot)
-    if cols_league:
-        groups_l = []
-        labels_l = []
-        medians_l = []
-
-        # Pour chaque colonne de ligue, on extrait les valeurs de la cible là où la ligue vaut 1
-        for col in cols_league:
-            values = df.loc[df[col] == 1, target_col].dropna().values / 1e6
-            if len(values) > 0:
-                groups_l.append(values)
-                labels_l.append(col.replace("league_", ""))
-                medians_l.append(pd.Series(values).median())
-        
-        if groups_l:
-            # Tri des ligues par leur médiane décroissante
-            sorted_indices = pd.Series(medians_l).sort_values(ascending=False).index
-            groups_l = [groups_l[i] for i in sorted_indices]
-            labels_l = [labels_l[i] for i in sorted_indices]
-
-            fig, ax = plt.subplots(figsize=(14, 5))
-            ax.boxplot(groups_l, labels=labels_l, patch_artist=True,
-                       boxprops=dict(facecolor="#C678DD", alpha=0.5))
-            ax.set_title("Valeur Marchande par championnat (Trié par médiane décroissante)")
-            ax.set_ylabel("VM (M€)")
-            plt.xticks(rotation=30, ha="right")
-            plt.tight_layout()
-            
-            if sauvegarder:
-                plt.savefig(chemin_dossier / "vm_par_league.png")
-                print("vm_par_league.png sauvegardé")
-            plt.show()
-
-
-def analyser_outliers(df, cols_a_analyser=None):
-    """Détecte le nombre d'outliers pour les variables numériques
-
-    en utilisant deux méthodes : l'Écart Interquartile (IQR) et le Z-score.
-    """
-    print("Détection des outliers")
-
-    # Liste des colonnes par défaut si aucune n'est fournie
-    if cols_a_analyser is None:
-        cols_a_analyser = [
-            "age",
-            "Playing Time_Min",
-            "Performance_Gls",
-            "Performance_Ast",
-            "xg",
-            "xa",
-            "injury_days_total",
-            "injury_nb_total",
-        ]
-
-    # Filtrage pour ne garder que les colonnes réellement présentes
-    key_num = [c for c in cols_a_analyser if c in df.columns]
-
-    if not key_num:
-        print("Aucune des colonnes spécifiées n'est présente dans le DataFrame.")
-        return
-
-    # Calcul des outliers par colonne
-    outlier_report = []
-    for col in key_num:
-        # Conversion numérique forcée et suppression des NaN
-        s = pd.to_numeric(df[col], errors="coerce").dropna()
-        
-        if s.empty:
-            continue
-
-        # Méthode 1 : IQR (Interquartile Range)
-        q1, q3 = s.quantile(0.25), s.quantile(0.75)
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-        n_iqr = ((s < lower_bound) | (s > upper_bound)).sum()
-
-        # Méthode 2 : Z-score (Seuil strict à |Z| > 3)
-        # Note : On s'assure qu'il y a de la variance pour éviter une division par zéro
-        if s.std() > 0:
-            z = np.abs(stats.zscore(s))
-            n_z = (z > 3).sum()
-        else:
-            n_z = 0
-
-        outlier_report.append({
-            "variable": col, 
-            "outliers_IQR": n_iqr, 
-            "outliers_Zscore": n_z, 
-            "total": len(s)
-        })
-
-    # Structuration et affichage du tableau de rapport
-    if not outlier_report:
-        print("Impossible de calculer les valeurs aberrantes (données vides ou textuelles).")
-        return
-
-    df_out = pd.DataFrame(outlier_report)
-    df_out["pct_IQR"] = (df_out["outliers_IQR"] / df_out["total"] * 100).round(1)
-    
-    # Réorganisation esthétique des colonnes
-    colonnes_ordre = ["variable", "outliers_IQR", "pct_IQR", "outliers_Zscore", "total"]
-    print(df_out[colonnes_ordre].to_string(index=False))
 
 
 def analyser_correlations(df, target_col, cols_cles=None, dossier_sauvegarde=None):
@@ -497,19 +351,7 @@ def analyser_correlations(df, target_col, cols_cles=None, dossier_sauvegarde=Non
         fig, ax = plt.subplots(figsize=(12, 9))
         mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
         
-        sns.heatmap(
-            corr_matrix,
-            mask=mask,
-            annot=True,
-            fmt=".2f",
-            cmap="coolwarm",
-            center=0,
-            vmin=-1,
-            vmax=1,
-            linewidths=0.5,
-            ax=ax,
-            annot_kws={"size": 9},
-        )
+        sns.heatmap( corr_matrix, mask=mask, annot=True, fmt=".2f", cmap="coolwarm", center=0, vmin=-1, vmax=1, linewidths=0.5, ax=ax, annot_kws={"size": 9}, )
         ax.set_title(f"Matrice de corrélation", fontsize=14, fontweight="bold")
         plt.tight_layout()
 
@@ -603,15 +445,7 @@ def analyser_profil_par_poste(df, target_col, dossier_sauvegarde=None, couleurs_
     fig.suptitle("Profil médian par poste", fontsize=13, fontweight="bold")
 
     # Graphique 1 : Heatmap du profil normalisé avec annotations réelles
-    sns.heatmap(
-        profile_norm.T, 
-        annot=profile.T.round(1), 
-        fmt="g",
-        cmap="YlOrRd", 
-        ax=axes[0], 
-        linewidths=0.5, 
-        cbar_kws={"label": "Normalisé 0-1"}
-    )
+    sns.heatmap( profile_norm.T, annot=profile.T.round(1), fmt="g", cmap="YlOrRd", ax=axes[0], linewidths=0.5, cbar_kws={"label": "Normalisé 0-1"} )
     axes[0].set_title("Valeurs normalisées (annotation = médiane réelle)")
     axes[0].set_xlabel("Poste")
 
@@ -703,18 +537,12 @@ def analyser_ages_par_poste(df, dossier_sauvegarde=None, liste_couleurs=None):
     print(stats_mediane.to_string())
 
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from pathlib import Path
-
 def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
     """Génère une heatmap croisant les championnats (colonnes league_*) et les postes (position)
     pour afficher la valeur marchande médiane (en M€) de chaque segment.
     Noms des ligues configurés à l'horizontale.
     """
-    print("Analyse croisée : VM médiane par championnat et par poste")
+    print("Analyse croisée : valeur marchande médiane par championnat et par poste")
 
     # Vérifications initiales des colonnes
     if "position" not in df.columns:
@@ -731,15 +559,9 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
         print("Annulé : Aucune colonne commençant par 'league_' n'a été trouvée.")
         return
 
-    # --- CONFIGURATION ET TRADUCTION DES POSTES EN FRANÇAIS ---
     pos_order_en = ["Goalkeeper", "Defender", "Midfield", "Attack"]
     
-    mapping_postes = {
-        "Goalkeeper": "Gardien",
-        "Defender": "Défenseur",
-        "Midfield": "Milieu",
-        "Attack": "Attaquant"
-    }
+    mapping_postes = { "Goalkeeper": "Gardien", "Defender": "Défenseur", "Midfield": "Milieu", "Attack": "Attaquant" }
     pos_order_fr = ["Gardien", "Défenseur", "Milieu", "Attaquant"]
     
     df_filtrer = df[df["position"].isin(pos_order_en)].copy()
@@ -748,14 +570,13 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
         return
 
     df_filtrer["position"] = df_filtrer["position"].map(mapping_postes)
-    # -----------------------------------------------------------
 
     rows_pivot = {}
 
     for col in cols_league:
         nom_ligue = col.replace("league_", "")
         
-        # Nettoyage des préfixes de pays (ex: "ENG-Premier League" -> "Premier League")
+        # Nettoyage des préfixes de pays
         if "-" in nom_ligue:
             nom_ligue = nom_ligue.split("-")[-1]
         
@@ -774,27 +595,15 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
 
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    sns.heatmap(
-        pivot.round(1), 
-        annot=True, 
-        fmt=".1f", 
-        cmap="YlOrRd",
-        linewidths=0.5, 
-        ax=ax, 
-        cbar_kws={"label": "VM médiane (M€)"}
-    )
+    sns.heatmap( pivot.round(1), annot=True, fmt=".1f", cmap="YlOrRd", linewidths=0.5, ax=ax, cbar_kws={"label": "VM médiane (M€)"} )
     
-    # --- ADAPTATION DYNAMIQUE DU TITRE ---
     nom_cible_titre = "Valeur Marchande" if target_col == "market_value_in_eur" else target_col
     ax.set_title(f"{nom_cible_titre} médiane (M€) par championnat × poste", fontsize=13, fontweight="bold")
     
     ax.set_xlabel("Poste")
     ax.set_ylabel("Championnat")
 
-    # --- FORCER LES LIGUES À L'HORIZONTALE (AXE Y) ---
     plt.yticks(rotation=0) 
-    # --------------------------------------------------
-    
     plt.tight_layout()
 
     # Gestion de la sauvegarde
@@ -809,85 +618,75 @@ def analyser_heatmap_league_poste(df, target_col, dossier_sauvegarde=None):
     plt.show()
 
 
-def analyser_distribution_violin_league(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
-    """Génère un graphique en violon (Violin plot) pour analyser la distribution et la densité
-    de la variable cible (en M€) à travers les différents championnats (colonnes league_*).
+def analyser_distribution_prix_ligue_poste(df):
+    """Reconstitue la colonne ligue à partir du One-Hot, nettoie les noms de championnats,
+    trie les championnats par valeur marchande médiane décroissante et affiche le Boxplot global (Échelle Log).
     """
-    print("Analyse de la distribution par championnat")
+    print("Démarrage de l'analyse de distribution des prix...")
 
-    # Vérifications initiales des colonnes
-    if target_col not in df.columns:
-        print(f"Annulé : La colonne cible '{target_col}' est absente.")
-        return
-
-    # Identification dynamique des colonnes de ligues encodées
+    # Identification dynamique des colonnes One-Hot de ligues
     cols_league = [c for c in df.columns if c.startswith("league_")]
+
     if not cols_league:
-        print("Annulé : Aucune colonne commençant par 'league_' n'a été trouvée.")
+        print("Annulé : Aucune colonne de type 'league_' trouvée dans le DataFrame.")
         return
 
-    # Gestion des couleurs par défaut
-    if couleurs_dict is None:
-        couleurs_dict = {"purple": "#C678DD", "red": "#E06C75"}
-
-    leagues_data = {}
-    medians_l = {}
-
-    for col in cols_league:
-        nom_ligue = col.replace("league_", "")
-        
-        # Sélection des valeurs de la cible pour les joueurs de cette ligue (valeur == 1)
-        values = df.loc[df[col] == 1, target_col].dropna().values / 1e6
-        
-        # Sécurité : On s'assure qu'il y a assez de points pour construire un violon (minimum 2 requis)
-        if len(values) >= 2:
-            leagues_data[nom_ligue] = values
-            medians_l[nom_ligue] = pd.Series(values).median()
-
-    if not leagues_data:
-        print("Annulé : Pas assez de données numériques valides pour générer les violons.")
+    if "market_value_in_eur" not in df.columns or "position" not in df.columns:
+        print("Annulé : La colonne 'market_value_in_eur' ou 'position' est absente.")
         return
 
-    # Calcul de l'ordre d'affichage basé sur la médiane décroissante
-    order_vm = pd.Series(medians_l).sort_values(ascending=False).index
+    # Création d'un DataFrame temporaire de travail pour le plot
+    df_plot = df.copy()
 
-    # Extraction ordonnée des données et des labels pour le graphique
-    data_violin = [leagues_data[l] for l in order_vm]
-    labels_valides = list(order_vm)
+    mapping_postes = { "Attack": "Attaquant", "Midfield": "Milieu", "Defender": "Défenseur", "Goalkeeper": "Gardien" }
+    df_plot["position"] = df_plot["position"].map(mapping_postes).fillna(df_plot["position"])
 
-    fig, ax = plt.subplots(figsize=(14, 6))
-    fig.suptitle(f"Distribution de {target_col} par championnat", fontsize=13, fontweight="bold")
+    # Reconstitution textuelle
+    df_plot["league"] = ( df_plot[cols_league].idxmax(axis=1).str.replace("league_", "") )
     
-    parts = ax.violinplot(data_violin, showmedians=True, showextrema=False)
-    
-    # Customisation des couleurs du corps des violons
-    for pc in parts["bodies"]:
-        pc.set_facecolor(couleurs_dict.get("purple", "#C678DD"))
-        pc.set_alpha(0.6)
-        
-    # Customisation de la ligne de la médiane
-    if "cmedians" in parts:
-        parts["cmedians"].set_color(couleurs_dict.get("red", "#E06C75"))
-        parts["cmedians"].set_linewidth(2)
+    # Nettoyage des préfixes
+    df_plot["league"] = df_plot["league"].apply(lambda x: x.split("-")[-1] if "-" in x else x)
 
-    # Configuration des axes (Matplotlib indexe les violons à partir de 1)
-    ax.set_xticks(range(1, len(labels_valides) + 1))
-    ax.set_xticklabels(labels_valides, rotation=30, ha="right")
-    ax.set_ylabel(f"{target_col} (M€)")
+    # Tri des championnats par valeur marchande médiane décroissante
+    league_order = (
+        df_plot.groupby("league")["market_value_in_eur"]
+        .median()
+        .sort_values(ascending=False)
+        .index
+    )
+
+    print(f"{len(league_order)} championnats détectés et ordonnés pour l'affichage.")
+
+    # Configuration graphique et génération du Boxplot
+    sns.set_theme(style="whitegrid")
+    plt.figure(figsize=(14, 6))
+
+    sns.boxplot( data=df_plot, x="league", y="market_value_in_eur", hue="position",
+                 hue_order=["Attaquant", "Milieu", "Défenseur", "Gardien"], order=league_order, palette="Set2")
+
+    # Échelle logarithmique indispensable pour écraser la dispersion des prix
+    plt.yscale("log")
+
+    formatter_millions = FuncFormatter(lambda y, pos: f"{y / 1e6:g}")
+    plt.gca().yaxis.set_major_formatter(formatter_millions)
+
+    plt.title(
+        "Distribution des prix par Championnat et Poste (4 Catégories Majeures)",
+        fontsize=14,
+        fontweight="bold",
+    )
+    plt.xlabel("Championnat")
+    plt.ylabel("Valeur Marchande (M€)")
+    plt.xticks(rotation=15, ha="right")
+
+    # Placement propre de la légende à l'extérieur pour éviter l'enchevêtrement
+    plt.legend( title="Poste Nettoyé", bbox_to_anchor=(1.05, 1), loc="upper left" )
+    
     plt.tight_layout()
-
-    # Gestion de la sauvegarde
-    if dossier_sauvegarde is not None:
-        chemin_dossier = Path(dossier_sauvegarde)
-        chemin_dossier.mkdir(exist_ok=True)
-        chemin_fichier = chemin_dossier / "feature_engineered_violin_league.png"
-        
-        plt.savefig(chemin_fichier)
-        print(f"\nViolin plot sauvegardé sous : {chemin_fichier}")
-
-    # Affichage
     plt.show()
 
+    print()
+    print("Boxplot généré avec succès.")
 
 
 def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_dict=None):
@@ -926,7 +725,7 @@ def analyser_profil_outliers(df, target_col, dossier_sauvegarde=None, couleurs_d
 
     # Création des boxplots comparatifs
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    # fig.suptitle(f"Profil des joueurs à {target_col} ≥ 100M€ vs reste", fontsize=13, fontweight="bold")
+    fig.suptitle(f"Profil des joueurs à {target_col} ≥ 100M€ vs reste", fontsize=13, fontweight="bold")
 
     # Utilisation d'une copie locale pour éviter d'ajouter de façon permanente la colonne 'group' au df global
     df_local = df.copy()
@@ -984,16 +783,8 @@ def verifier_coherence_jours_blessures(df):
     print("Contrôle de cohérence : jours de blessures")
 
     # Liste complète des composantes de blessures à vérifier
-    injury_d_cols = [
-        "injury_musculaire_nb_d",
-        "injury_genou_nb_d",
-        "injury_cheville_pied_nb_d",
-        "injury_mollet_tibia_nb_d",
-        "injury_dos_bassin_nb_d",
-        "injury_trauma_severe_nb_d",
-        "injury_medical_repos_nb_d",
-        "injury_minor_unknown_nb_d",
-    ]
+    injury_d_cols = [ "injury_musculaire_nb_d", "injury_genou_nb_d", "injury_cheville_pied_nb_d", "injury_mollet_tibia_nb_d", "injury_dos_bassin_nb_d",
+                      "injury_trauma_severe_nb_d", "injury_medical_repos_nb_d", "injury_minor_unknown_nb_d"]
 
     # Filtrage pour ne garder que les colonnes réellement présentes
     injury_d_cols = [c for c in injury_d_cols if c in df.columns]
@@ -1088,33 +879,15 @@ def analyser_evolution_temporelle_saison(df, target_col="valeur_marchande", doss
     print(f"\nÉvolution VM par saison :")
     print(vm_season.to_string())
 
-    # --- CONFIGURATION GRAPHIQUE ---
     plt.figure(figsize=(10, 6))
     
-    # TRÈS IMPORTANT : Conversion des années en entier puis en texte (ex: 2020.0 -> 2020 -> "2020")
-    # Cela empêche matplotlib d'inventer des demi-années comme 2020.5
     seasons_clean = [str(int(s)) for s in vm_season.index]
 
     # Courbe de la Médiane
-    plt.plot(
-        seasons_clean, 
-        vm_season["Médiane (M€)"], 
-        marker="o", 
-        color=couleurs_dict.get("blue", "#61AFEF"),  
-        label="Médiane", 
-        lw=2
-    )
+    plt.plot( seasons_clean, vm_season["Médiane (M€)"], marker="o", color=couleurs_dict.get("blue", "#61AFEF"), label="Médiane", lw=2 )
     
     # Courbe de la Moyenne
-    plt.plot(
-        seasons_clean, 
-        vm_season["Moyenne (M€)"], 
-        marker="s", 
-        color=couleurs_dict.get("red", "#E06C75"),   
-        label="Moyenne", 
-        lw=2, 
-        linestyle="--"
-    )
+    plt.plot( seasons_clean, vm_season["Moyenne (M€)"], marker="s", color=couleurs_dict.get("red", "#E06C75"), label="Moyenne", lw=2, linestyle="--" )
     
     # Adaptation du nom pour le titre
     nom_cible_titre = "Valeur Marchande" if target_col == "market_value_in_eur" else target_col
@@ -1160,16 +933,8 @@ def analyser_cycle_vie_financier(df):
         return df_clean
 
     # Harmonisation des postes (anglais / français / abréviations)
-    mapping_postes = {
-        "FW": "Attack",
-        "MF": "Midfield",
-        "DF": "Defender",
-        "GK": "Goalkeeper",
-        "Attaquant": "Attack",
-        "Milieu": "Midfield",
-        "Défenseur": "Defender",
-        "Gardien": "Goalkeeper",
-    }
+    mapping_postes = { "FW": "Attack", "MF": "Midfield", "DF": "Defender", "GK": "Goalkeeper",
+                       "Attaquant": "Attack", "Milieu": "Midfield", "Défenseur": "Defender", "Gardien": "Goalkeeper"}
     df_clean["position"] = (
         df_clean["position"].map(mapping_postes).fillna(df_clean["position"])
     )
@@ -1178,9 +943,7 @@ def analyser_cycle_vie_financier(df):
     postes_valides = ["Attack", "Midfield", "Defender", "Goalkeeper"]
     df_clean = df_clean[df_clean["position"].isin(postes_valides)]
 
-    print(
-        f"{len(df_clean)} observations valides trouvées pour l'analyse graphique."
-    )
+    print( f"{len(df_clean)} observations valides trouvées pour l'analyse graphique." )
 
     # Agrégation des données par âge
     age_profile = (
@@ -1193,9 +956,7 @@ def analyser_cycle_vie_financier(df):
     age_profile = age_profile[age_profile["count"] >= 10]
 
     if age_profile.empty:
-        print(
-            "Annulé : Pas assez de volume de données après filtrage des âges pour générer le graphique."
-        )
+        print( "Annulé : Pas assez de volume de données après filtrage des âges pour générer le graphique." )
         return df_clean
 
     # Génération du graphique bi-axe (Seaborn / Matplotlib)
@@ -1203,29 +964,13 @@ def analyser_cycle_vie_financier(df):
     fig, ax1 = plt.subplots(figsize=(11, 5))
 
     # Axe principal : Courbe de la Valeur Marchande Médiane (convertie en M€)
-    sns.lineplot(
-        data=age_profile,
-        x="age",
-        y=age_profile["median"] / 1e6,
-        marker="o",
-        linewidth=3,
-        color="#1f77b4",
-        ax=ax1,
-        label="Valeur Marchande Médiane",
-    )
+    sns.lineplot( data=age_profile, x="age", y=age_profile["median"] / 1e6, marker="o", linewidth=3, color="#1f77b4", ax=ax1, label="Valeur Marchande Médiane")
     ax1.set_ylabel("Valeur Médiane (M€)", color="#1f77b4", fontsize=12)
     ax1.set_xlabel("Âge au moment de la saison", fontsize=12)
 
     # Axe secondaire : Volume de données (Histogramme lissé en arrière-plan)
     ax2 = ax1.twinx()
-    ax2.fill_between(
-        age_profile["age"],
-        age_profile["count"],
-        alpha=0.1,
-        color="gray",
-        step="mid",
-        label="Nombre d'observations",
-    )
+    ax2.fill_between( age_profile["age"], age_profile["count"], alpha=0.1, color="gray", step="mid", label="Nombre d'observations")
     ax2.set_ylabel("Volume de données", color="gray", fontsize=12)
     ax2.grid(False)
 
@@ -1240,9 +985,9 @@ def analyser_cycle_vie_financier(df):
     )
 
     # Titre général
-    #ax1.set_title(
-    #    "Cycle de vie financier d'un joueur", fontsize=14, fontweight="bold"
-    #)
+    ax1.set_title(
+       "Cycle de vie financier d'un joueur", fontsize=14, fontweight="bold"
+    )
 
     # Fusion propre des légendes des deux axes distincts
     lines1, labels1 = ax1.get_legend_handles_labels()
@@ -1255,155 +1000,10 @@ def analyser_cycle_vie_financier(df):
     print()
     print("Graphique généré avec succès.")
 
-    # On retourne le DataFrame nettoyé au cas où tu en as besoin pour la suite
     return df_clean
 
 
-def analyser_distribution_prix_ligue_poste(df):
-    """Reconstitue la colonne ligue à partir du One-Hot, nettoie les noms de championnats,
-    trie les championnats par valeur marchande médiane décroissante et affiche le Boxplot global (Échelle Log).
-    """
-    print("Démarrage de l'analyse de distribution des prix...")
 
-    # Identification dynamique des colonnes One-Hot de ligues
-    cols_league = [c for c in df.columns if c.startswith("league_")]
-
-    if not cols_league:
-        print("Annulé : Aucune colonne de type 'league_' trouvée dans le DataFrame.")
-        return
-
-    if "market_value_in_eur" not in df.columns or "position" not in df.columns:
-        print("Annulé : La colonne 'market_value_in_eur' ou 'position' est absente.")
-        return
-
-    # Création d'un DataFrame temporaire de travail pour le plot
-    df_plot = df.copy()
-
-    # --- TRADUCTION DES POSTES EN FRANÇAIS ---
-    mapping_postes = {
-        "Attack": "Attaquant",
-        "Midfield": "Milieu",
-        "Defender": "Défenseur",
-        "Goalkeeper": "Gardien"
-    }
-    df_plot["position"] = df_plot["position"].map(mapping_postes).fillna(df_plot["position"])
-
-    # --- RECONSTITUTION ET NETTOYAGE DES LIGUES ---
-    # Reconstitution textuelle
-    df_plot["league"] = (
-        df_plot[cols_league].idxmax(axis=1).str.replace("league_", "")
-    )
-    
-    # Nettoyage des préfixes (ex: 'ENG-Premier League' devient 'Premier League')
-    # On sépare au niveau du tiret '-' et on ne garde que la deuxième partie
-    df_plot["league"] = df_plot["league"].apply(lambda x: x.split("-")[-1] if "-" in x else x)
-    # -----------------------------------------------
-
-    # Tri des championnats par valeur marchande médiane décroissante
-    league_order = (
-        df_plot.groupby("league")["market_value_in_eur"]
-        .median()
-        .sort_values(ascending=False)
-        .index
-    )
-
-    print(f"{len(league_order)} championnats détectés et ordonnés pour l'affichage.")
-
-    # Configuration graphique et génération du Boxplot
-    sns.set_theme(style="whitegrid")
-    plt.figure(figsize=(14, 6))
-
-    sns.boxplot(
-        data=df_plot,
-        x="league",
-        y="market_value_in_eur",
-        hue="position",
-        hue_order=["Attaquant", "Milieu", "Défenseur", "Gardien"],
-        order=league_order,
-        palette="Set2",
-    )
-
-    # Échelle logarithmique indispensable pour écraser la dispersion des prix
-    plt.yscale("log")
-
-    # --- CODE DE FORMATAGE EN MILLIONS (M€) ---
-    formatter_millions = FuncFormatter(lambda y, pos: f"{y / 1e6:g}")
-    plt.gca().yaxis.set_major_formatter(formatter_millions)
-
-    # plt.title(
-    #     "Distribution des prix par Championnat et Poste (4 Catégories Majeures)",
-    #     fontsize=14,
-    #     fontweight="bold",
-    # )
-    plt.xlabel("Championnat")
-    plt.ylabel("Valeur Marchande (M€)")
-    plt.xticks(rotation=15, ha="right")  # Rotation réduite à 15° car les noms sont plus courts et plus propres
-
-    # Placement propre de la légende à l'extérieur pour éviter l'enchevêtrement
-    plt.legend(
-        title="Poste Nettoyé", bbox_to_anchor=(1.05, 1), loc="upper left"
-    )
-    
-    plt.tight_layout()
-    plt.show()
-
-    print()
-    print("Boxplot généré avec succès.")
-
-
-
-def detecter_top_colinearites(df, top_n=15):
-    """Calcule la matrice de corrélation et extrait les paires de variables
-
-    présentant les plus fortes colinéarités (en valeur absolue), en excluant
-    toutes les variables normalisées finissant par '_nor'.
-    """
-    print(
-        f"Extraction du Top {top_n} des colinéarités (hors variables normalisées)..."
-    )
-
-    # Sélection uniquement des variables numériques (continues et binaires)
-    df_num = df.select_dtypes(include=[np.number]).copy()
-
-    # Exclusion des variables normalisées
-    cols_sans_nor = [c for c in df_num.columns if not c.endswith("_nor")]
-    df_num = df_num[cols_sans_nor]
-
-    # Sécurité : On supprime les colonnes qui n'ont aucune variabilité (écart-type nul)
-    df_num = df_num.loc[:, df_num.std() > 0]
-
-    # Calcul de la matrice de corrélation
-    corr_matrix = df_num.corr(method="pearson")
-
-    # On ne garde que le triangle supérieur de la matrice pour éviter les doublons
-    upper_tri = corr_matrix.where(
-        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-    )
-
-    # On "aplatit" (unstack) la matrice pour passer à une liste de paires
-    corr_pairs = upper_tri.unstack().dropna()
-
-    # Création d'un DataFrame propre pour le tri
-    df_colin = pd.DataFrame(corr_pairs).reset_index()
-    df_colin.columns = ["Variable_A", "Variable_B", "Correlation"]
-
-    # Ajout de la valeur absolue pour capturer les fortes corrélations négatives
-    df_colin["Abs_Correlation"] = df_colin["Correlation"].abs()
-
-    # Tri par corrélation absolue décroissante et sélection du Top N
-    top_colin = df_colin.sort_values(by="Abs_Correlation", ascending=False).head(
-        top_n
-    )
-
-    # Nettoyage de l'affichage
-    top_colin = top_colin.drop(columns=["Abs_Correlation"]).reset_index(
-        drop=True
-    )
-
-    # Formatage pour un affichage élégant des coefficients
-    top_colin["Correlation"] = top_colin["Correlation"].round(3)
-
-    return top_colin
 
 
 def analyser_variables_les_plus_explicatives(
@@ -1429,7 +1029,9 @@ def analyser_variables_les_plus_explicatives(
 
     # Dictionnaire métier
     dict_variables = {
+
         # Famille : Identité, âge et physique
+
         "player": ("Nom du joueur", "Identité et physique"),
         "team": ("Club du joueur", "Identité et physique"),
         "nation": ("Nationalité", "Identité et physique"),
@@ -1439,161 +1041,60 @@ def analyser_variables_les_plus_explicatives(
         "foot_both": ("Ambidextre (0/1)", "Identité et physique"),
         "foot_left": ("Gaucher (0/1)", "Identité et physique"),
         "foot_right": ("Droitier (0/1)", "Identité et physique"),
+
         # Famille : Postes et sub-positions
+
         "pos_DF": ("Défenseur (0/1)", "Postes"),
         "pos_FW": ("Attaquant (0/1)", "Postes"),
         "pos_GK": ("Gardien de but (0/1)", "Postes"),
         "pos_MF": ("Milieu de terrain (0/1)", "Postes"),
-        "sub_position_Attacking Midfield": (
-            "Milieu offensif (0/1)",
-            "Postes",
-        ),
-        "sub_position_Central Midfield": (
-            "Milieu central (0/1)",
-            "Postes",
-        ),
-        "sub_position_Centre-Back": (
-            "Défenseur central (0/1)",
-            "Postes",
-        ),
-        "sub_position_Centre-Forward": (
-            "Avant-centre (0/1)",
-            "Postes",
-        ),
-        "sub_position_Defensive Midfield": (
-            "Milieu défensif (0/1)",
-            "Postes",
-        ),
-        "sub_position_Goalkeeper": (
-            "Gardien (Sous-poste 0/1)",
-            "Postes",
-        ),
-        "sub_position_Left Midfield": (
-            "Milieu gauche (0/1)",
-            "Postes",
-        ),
-        "sub_position_Left Winger": (
-            "Ailier gauche (0/1)",
-            "Postes",
-        ),
-        "sub_position_Left-Back": (
-            "Latéral gauche (0/1)",
-            "Postes",
-        ),
-        "sub_position_Right Midfield": (
-            "Milieu droit (0/1)",
-            "Postes",
-        ),
-        "sub_position_Right Winger": (
-            "Ailier droit (0/1)",
-            "Postes",
-        ),
-        "sub_position_Right-Back": (
-            "Latéral droit (0/1)",
-            "Postes",
-        ),
-        "sub_position_Second Striker": (
-            "Neuf et demi / Second attaquant (0/1)",
-            "Postes",
-        ),
+        "sub_position_Attacking Midfield": ( "Milieu offensif (0/1)", "Postes", ),
+        "sub_position_Central Midfield": ( "Milieu central (0/1)", "Postes", ),
+        "sub_position_Centre-Back": ( "Défenseur central (0/1)", "Postes", ),
+        "sub_position_Centre-Forward": ( "Avant-centre (0/1)", "Postes", ),
+        "sub_position_Defensive Midfield": ( "Milieu défensif (0/1)", "Postes", ),
+        "sub_position_Goalkeeper": ( "Gardien (Sous-poste 0/1)", "Postes", ),
+        "sub_position_Left Midfield": ( "Milieu gauche (0/1)", "Postes", ),
+        "sub_position_Left Winger": ( "Ailier gauche (0/1)", "Postes", ),
+        "sub_position_Left-Back": ( "Latéral gauche (0/1)", "Postes", ),
+        "sub_position_Right Midfield": ( "Milieu droit (0/1)", "Postes", ),
+        "sub_position_Right Winger": ( "Ailier droit (0/1)", "Postes", ),
+        "sub_position_Right-Back": ( "Latéral droit (0/1)", "Postes", ),
+        "sub_position_Second Striker": ( "Neuf et demi / Second attaquant (0/1)", "Postes", ),
+
         # Famille : Championnats et contexte international
-        "league_ENG-Premier League": (
-            "Évolue en Premier League (0/1)",
-            "Ligues et contexte international",
-        ),
-        "league_ESP-La Liga": (
-            "Évolue en La Liga (0/1)",
-            "Ligues et contexte international",
-        ),
-        "league_FRA-Ligue 1": (
-            "Évolue en Ligue 1 (0/1)",
-            "Ligues et contexte international",
-        ),
-        "league_GER-Bundesliga": (
-            "Évolue en Bundesliga (0/1)",
-            "Ligues et contexte international",
-        ),
-        "league_ITA-Serie A": (
-            "Évolue en Serie A (0/1)",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_1": (
-            "Sélection nationale Rang FIFA : 1",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_2": (
-            "Sélection nationale Rang FIFA : 2",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_3": (
-            "Sélection nationale Rang FIFA : 3",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_4": (
-            "Sélection nationale Rang FIFA : 4",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_5": (
-            "Sélection nationale Rang FIFA : 5",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_6": (
-            "Sélection nationale Rang FIFA : 6",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_7": (
-            "Sélection nationale Rang FIFA : 7",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_8": (
-            "Sélection nationale Rang FIFA : 8",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_9": (
-            "Sélection nationale Rang FIFA : 9",
-            "Ligues et contexte international",
-        ),
-        "classement_FIFA_10": (
-            "Sélection nationale Rang FIFA : 10",
-            "Ligues et contexte international",
-        ),
+
+        "league_ENG-Premier League": ( "Évolue en Premier League (0/1)", "Ligues et contexte international", ),
+        "league_ESP-La Liga": ( "Évolue en La Liga (0/1)", "Ligues et contexte international", ),
+        "league_FRA-Ligue 1": ( "Évolue en Ligue 1 (0/1)", "Ligues et contexte international", ),
+        "league_GER-Bundesliga": ( "Évolue en Bundesliga (0/1)", "Ligues et contexte international", ),
+        "league_ITA-Serie A": ( "Évolue en Serie A (0/1)", "Ligues et contexte international", ),
+        "classement_FIFA_1": ( "Sélection nationale Rang FIFA : 1", "Ligues et contexte international", ),
+        "classement_FIFA_2": ( "Sélection nationale Rang FIFA : 2", "Ligues et contexte international", ),
+        "classement_FIFA_3": ( "Sélection nationale Rang FIFA : 3", "Ligues et contexte international", ),
+        "classement_FIFA_4": ( "Sélection nationale Rang FIFA : 4", "Ligues et contexte international", ),
+        "classement_FIFA_5": ( "Sélection nationale Rang FIFA : 5", "Ligues et contexte international", ),
+        "classement_FIFA_6": ( "Sélection nationale Rang FIFA : 6", "Ligues et contexte international", ),
+        "classement_FIFA_7": ( "Sélection nationale Rang FIFA : 7", "Ligues et contexte international", ),
+        "classement_FIFA_8": ( "Sélection nationale Rang FIFA : 8", "Ligues et contexte international", ),
+        "classement_FIFA_9": ( "Sélection nationale Rang FIFA : 9", "Ligues et contexte international", ),
+        "classement_FIFA_10": ( "Sélection nationale Rang FIFA : 10", "Ligues et contexte international", ),
+
         # Famille : Temps de jeu, contrat et chronologie
+
         "season_year": ("Année de la saison", "Temps de jeu & Contrat"),
-        "contrat_jours_restants": (
-            "Jours de contrat restants",
-            "Temps de jeu et contrat",
-        ),
         "Playing Time_MP": ("Matchs disputés", "Temps de jeu et contrat"),
-        "Playing Time_Starts": (
-            "Titularisations",
-            "Temps de jeu et contrat",
-        ),
-        "Playing Time_90s": (
-            "Nombre de 90 minutes complétées",
-            "Temps de jeu et contrat",
-        ),
-        "Playing Time_Mn/MP": (
-            "Minutes jouées par match disputé",
-            "Temps de jeu et contrat",
-        ),
-        "Starts_Mn/Start": (
-            "Minutes par titularisation",
-            "Temps de jeu et contrat",
-        ),
-        "Starts_Compl": (
-            "Matchs commencés et terminés en entier",
-            "Temps de jeu et contrat",
-        ),
-        "Subs_Subs": (
-            "Entrées en cours de match (Remplaçant)",
-            "Temps de jeu et contrat",
-        ),
+        "Playing Time_Starts": ( "Titularisations", "Temps de jeu et contrat", ),
+        "Playing Time_90s": ( "Nombre de 90 minutes complétées", "Temps de jeu et contrat", ),
+        "Playing Time_Mn/MP": ( "Minutes jouées par match disputé", "Temps de jeu et contrat", ),
+        "Starts_Mn/Start": ( "Minutes par titularisation", "Temps de jeu et contrat", ),
+        "Starts_Compl": ( "Matchs commencés et terminés en entier", "Temps de jeu et contrat", ),
+        "Subs_Subs": ( "Entrées en cours de match (Remplaçant)", "Temps de jeu et contrat", ),
         "Subs_Mn/Sub": ("Minutes par entrée en jeu", "Temps de jeu et contrat"),
-        "Subs_unSub": (
-            "Matchs passés sur le banc sans entrer",
-            "Temps de jeu et contrat",
-        ),
+        "Subs_unSub": ( "Matchs passés sur le banc sans entrer", "Temps de jeu et contrat", ),
+
         # Famille : Performance Offensive (Volume et efficacité)
+
         "Performance_Gls": ("Buts marqués", "Performance offensive"),
         "Performance_Ast": ("Passes décisives", "Performance offensive"),
         "Performance_G-PK": ("Buts hors pénaltys", "Performance offensive"),
@@ -1601,14 +1102,8 @@ def analyser_variables_les_plus_explicatives(
         "Performance_PKatt": ("Pénaltys tentés", "Performance offensive"),
         "Standard_Sh": ("Tirs totaux effectués", "Performance offensive"),
         "Standard_SoT": ("Tirs cadrés", "Performance offensive"),
-        "Standard_SoT%": (
-            "Pourcentage de tirs cadrés",
-            "Performance offensive",
-        ),
-        "Standard_Sh/90": (
-            "Tirs effectués par 90 min",
-            "Performance offensive",
-        ),
+        "Standard_SoT%": ( "Pourcentage de tirs cadrés", "Performance offensive", ),
+        "Standard_Sh/90": ( "Tirs effectués par 90 min", "Performance offensive", ),
         "Standard_SoT/90": ("Tirs cadrés par 90 min", "Performance offensive"),
         "Standard_G/Sh": ("Buts par tir tenté", "Performance offensive"),
         "Standard_G/SoT": ("Buts par tir cadré", "Performance offensive"),
@@ -1616,196 +1111,80 @@ def analyser_variables_les_plus_explicatives(
         "Performance_Crs": ("Centres vers la surface", "Performance offensive"),
         "Performance_PKwon": ("Pénaltys obtenus", "Performance offensive"),
         "Per 90 Minutes_Gls": ("Buts par 90 min", "Performance offensive"),
-        "Per 90 Minutes_Ast": (
-            "Passes décisives par 90 min",
-            "Performance offensive",
-        ),
-        "Per 90 Minutes_G+A": (
-            "Buts + Assists par 90 min",
-            "Performance offensive",
-        ),
+        "Per 90 Minutes_Ast": ( "Passes décisives par 90 min", "Performance offensive", ),
+        "Per 90 Minutes_G+A": ( "Buts + Assists par 90 min", "Performance offensive", ),
         "Performance_Fld": ("Fautes subies", "Performance offensive"),
+
         # Famille : Statistiques avancées (xG, xA, Création)
+
         "xg": ("Expected Goals (xG)", "Statistiques avancées"),
         "xa": ("Expected Assists (xa)", "Statistiques avancées"),
-        "xg_chain": (
-            "Chaîne Expected Goals (xG Chain)",
-            "Statistiques avancées",
-        ),
-        "xg_buildup": (
-            "Construction Expected Goals",
-            "Statistiques avancées",
-        ),
+        "xg_chain": ( "Chaîne Expected Goals (xG Chain)", "Statistiques avancées", ),
+        "xg_buildup": ( "Construction Expected Goals", "Statistiques avancées", ),
+
         # Famille : Discipline et performance défensive
+
         "Performance_CrdY": ("Cartons jaunes reçus", "Discipline et défense"),
         "Performance_CrdR": ("Cartons rouges reçus", "Discipline et défense"),
-        "Performance_2CrdY": (
-            "Expulsions suite à 2 jaunes",
-            "Discipline et défense",
-        ),
+        "Performance_2CrdY": ( "Expulsions suite à 2 jaunes", "Discipline et défense", ),
         "Performance_Fls": ("Fautes commises", "Discipline et défense"),
         "Performance_Int": ("Interceptions de passes", "Discipline et défense"),
         "Performance_TklW": ("Tacles réussis", "Discipline et défense"),
         "Performance_PKcon": ("Pénaltys concédés", "Discipline et défense"),
-        "Performance_OG": (
-            "Buts contre son camp (OG)",
-            "Discipline et défense",
-        ),
+        "Performance_OG": ( "Buts contre son camp (OG)", "Discipline et défense", ),
+
         # Famille : Collectif et succès équipe
-        "Team Success_PPM": (
-            "Points par match glanés par l'équipe",
-            "Succès équipe et collectif",
-        ),
-        "Team Success_onG": (
-            "Buts marqués par l'équipe (si présent)",
-            "Succès équipe et collectif",
-        ),
-        "Team Success_onGA": (
-            "Buts encaissés par l'équipe (si présent)",
-            "Succès équipe et collectif",
-        ),
-        "Team Success_On-Off": (
-            "Impact On-Off de la présence du joueur",
-            "Succès équipe et collectif",
-        ),
+
+        "Team Success_PPM": ( "Points par match glanés par l'équipe", "Succès équipe et collectif", ),
+        "Team Success_onG": ( "Buts marqués par l'équipe (si présent)", "Succès équipe et collectif", ),
+        "Team Success_onGA": ( "Buts encaissés par l'équipe (si présent)", "Succès équipe et collectif", ),
+        "Team Success_On-Off": ( "Impact On-Off de la présence du joueur", "Succès équipe et collectif", ),
+
         # Famille : Spécifique Gardien de but
+
         "Performance_GA": ("Buts encaissés", "Spécifique gardien"),
-        "Performance_GA90": (
-            "Buts encaissés par 90 min",
-            "Spécifique gardien",
-        ),
+        "Performance_GA90": ( "Buts encaissés par 90 min", "Spécifique gardien", ),
         "Performance_Saves": ("Arrêts effectués", "Spécifique gardien"),
         "Performance_Save%": ("Pourcentage d'arrêts", "Spécifique gardien"),
-        "Performance_W": (
-            "Victoires de l'équipe (si présent)",
-            "Spécifique gardien",
-        ),
-        "Performance_D": (
-            "Matchs nuls de l'équipe (si présent)",
-            "Spécifique gardien",
-        ),
-        "Performance_L": (
-            "Défaites de l'équipe (si présent)",
-            "Spécifique gardien",
-        ),
-        "Performance_CS": (
-            "Clean Sheets (Matchs sans but)",
-            "Spécifique gardien",
-        ),
-        "Performance_CS%": (
-            "Pourcentage de Clean Sheets",
-            "Spécifique gardien",
-        ),
+        "Performance_W": ( "Victoires de l'équipe (si présent)", "Spécifique gardien", ),
+        "Performance_D": ( "Matchs nuls de l'équipe (si présent)", "Spécifique gardien", ),
+        "Performance_L": ( "Défaites de l'équipe (si présent)", "Spécifique gardien", ),
+        "Performance_CS": ( "Clean Sheets (Matchs sans but)", "Spécifique gardien", ),
+        "Performance_CS%": ( "Pourcentage de Clean Sheets", "Spécifique gardien", ),
         "Penalty Kicks_PKA": ("Pénaltys encaissés", "Spécifique gardien"),
         "Penalty Kicks_PKsv": ("Pénaltys arrêtés", "Spécifique gardien"),
-        "Penalty Kicks_PKm": (
-            "Pénaltys ratés par l'adversaire",
-            "Spécifique gardien",
-        ),
-        "Penalty Kicks_Save%": (
-            "Pourcentage de pénaltys arrêtés",
-            "Spécifique gardien",
-        ),
+        "Penalty Kicks_PKm": ( "Pénaltys ratés par l'adversaire", "Spécifique gardien", ),
+        "Penalty Kicks_Save%": ( "Pourcentage de pénaltys arrêtés", "Spécifique gardien", ),
+
         # Famille : Historique médical (Blessures)
+
         "injury_nb_total": ("Nombre total de blessures", "Historique médical"),
-        "injury_days_total": (
-            "Total des jours d'absence",
-            "Historique médical",
-        ),
-        "injury_matches_max_single": (
-            "Max de matchs manqués sur une blessure",
-            "Historique médical",
-        ),
-        "injury_musculaire": (
-            "Blessure musculaire (Présence 0/1)",
-            "Historique médical",
-        ),
-        "injury_musculaire_nb_d": (
-            "Jours d'absence - Muscle",
-            "Historique médical",
-        ),
-        "injury_musculaire_nb_m": (
-            "Matchs manqués - Muscle",
-            "Historique médical",
-        ),
-        "injury_genou": (
-            "Blessure au genou (Présence 0/1)",
-            "Historique médical",
-        ),
+        "injury_days_total": ( "Total des jours d'absence", "Historique médical", ),
+        "injury_matches_max_single": ( "Max de matchs manqués sur une blessure", "Historique médical", ),
+        "injury_musculaire": ( "Blessure musculaire (Présence 0/1)", "Historique médical", ),
+        "injury_musculaire_nb_d": ( "Jours d'absence - Muscle", "Historique médical", ),
+        "injury_musculaire_nb_m": ( "Matchs manqués - Muscle", "Historique médical", ),
+        "injury_genou": ( "Blessure au genou (Présence 0/1)", "Historique médical", ),
         "injury_genou_nb_d": ("Jours d'absence - Genou", "Historique médical"),
         "injury_genou_nb_m": ("Matchs manqués - Genou", "Historique médical"),
-        "injury_cheville_pied": (
-            "Blessure cheville/pied (Présence 0/1)",
-            "Historique médical",
-        ),
-        "injury_cheville_pied_nb_d": (
-            "Jours d'absence - Cheville/Pied",
-            "Historique médical",
-        ),
-        "injury_cheville_pied_nb_m": (
-            "Matchs manqués - Cheville/Pied",
-            "Historique médical",
-        ),
-        "injury_mollet_tibia": (
-            "Blessure mollet/tibia (Présence 0/1)",
-            "Historique médical",
-        ),
-        "injury_mollet_tibia_nb_d": (
-            "Jours d'absence - Mollet/Tibia",
-            "Historique médical",
-        ),
-        "injury_mollet_tibia_nb_m": (
-            "Matchs manqués - Mollet/Tibia",
-            "Historique médical",
-        ),
-        "injury_dos_bassin": (
-            "Blessure dos/bassin (Présence 0/1)",
-            "Historique médical",
-        ),
-        "injury_dos_bassin_nb_d": (
-            "Jours d'absence - Dos/Bassin",
-            "Historique médical",
-        ),
-        "injury_dos_bassin_nb_m": (
-            "Matchs manqués - Dos/Bassin",
-            "Historique médical",
-        ),
-        "injury_trauma_severe": (
-            "Traumatisme sévère/Opération (Présence 0/1)",
-            "Historique médical",
-        ),
-        "injury_trauma_severe_nb_d": (
-            "Jours d'absence - Traumatisme Sévère",
-            "Historique médical",
-        ),
-        "injury_trauma_severe_nb_m": (
-            "Matchs manqués - Traumatisme Sévère",
-            "Historique médical",
-        ),
-        "injury_medical_repos": (
-            "Maladie / Repos obligatoire (Présence 0/1)",
-            "Historique médical",
-        ),
-        "injury_medical_repos_nb_d": (
-            "Jours d'absence - Maladie/Repos",
-            "Historique médical",
-        ),
-        "injury_medical_repos_nb_m": (
-            "Matchs manqués - Maladie/Repos",
-            "Historique médical",
-        ),
-        "injury_minor_unknown": (
-            "Blessure mineure/inconnue (Présence 0/1)",
-            "Historique médical",
-        ),
-        "injury_minor_unknown_nb_d": (
-            "Jours d'absence - Blessure mineure",
-            "Historique médical",
-        ),
-        "injury_minor_unknown_nb_m": (
-            "Matchs manqués - Blessure mineure",
-            "Historique médical",
-        ),
+        "injury_cheville_pied": ( "Blessure cheville/pied (Présence 0/1)", "Historique médical", ),
+        "injury_cheville_pied_nb_d": ( "Jours d'absence - Cheville/Pied", "Historique médical", ),
+        "injury_cheville_pied_nb_m": ( "Matchs manqués - Cheville/Pied", "Historique médical", ),
+        "injury_mollet_tibia": ( "Blessure mollet/tibia (Présence 0/1)", "Historique médical", ),
+        "injury_mollet_tibia_nb_d": ( "Jours d'absence - Mollet/Tibia", "Historique médical", ),
+        "injury_mollet_tibia_nb_m": ( "Matchs manqués - Mollet/Tibia", "Historique médical", ),
+        "injury_dos_bassin": ( "Blessure dos/bassin (Présence 0/1)", "Historique médical", ),
+        "injury_dos_bassin_nb_d": ( "Jours d'absence - Dos/Bassin", "Historique médical", ),
+        "injury_dos_bassin_nb_m": ( "Matchs manqués - Dos/Bassin", "Historique médical", ),
+        "injury_trauma_severe": ( "Traumatisme sévère/Opération (Présence 0/1)", "Historique médical", ),
+        "injury_trauma_severe_nb_d": ( "Jours d'absence - Traumatisme Sévère", "Historique médical", ),
+        "injury_trauma_severe_nb_m": ( "Matchs manqués - Traumatisme Sévère", "Historique médical", ),
+        "injury_medical_repos": ( "Maladie / Repos obligatoire (Présence 0/1)", "Historique médical", ),
+        "injury_medical_repos_nb_d": ( "Jours d'absence - Maladie/Repos", "Historique médical", ),
+        "injury_medical_repos_nb_m": ( "Matchs manqués - Maladie/Repos", "Historique médical", ),
+        "injury_minor_unknown": ( "Blessure mineure/inconnue (Présence 0/1)", "Historique médical", ),
+        "injury_minor_unknown_nb_d": ( "Jours d'absence - Blessure mineure", "Historique médical", ),
+        "injury_minor_unknown_nb_m": ( "Matchs manqués - Blessure mineure", "Historique médical", ),
     }
 
     # Sélection et traitement numérique
@@ -1819,7 +1198,7 @@ def analyser_variables_les_plus_explicatives(
         {"Variable": corr_brute.index, "Corr_Cible_Brute": corr_brute.values}
     )
 
-    # Filtrage de la cible et des variantes normalisées (_nor)
+    # Filtrage de la cible et de sa version normalisée pour éviter les biais
     exclusions = [target_col, f"{target_col}_nor"]
     df_importance = df_importance[
         ~df_importance["Variable"].isin(exclusions)
@@ -1855,7 +1234,6 @@ def analyser_variables_les_plus_explicatives(
     ].round(3)
 
     # Colorométrie
-    # Configuration du style graphique de fond
     sns.set_theme(style="whitegrid", rc={"axes.facecolor": "#fbfbfb"})
     plt.figure(figsize=(12, 8))
 
@@ -1875,45 +1253,18 @@ def analyser_variables_les_plus_explicatives(
     }
 
     # Tracé des barres horizontales
-    sns.barplot(
-        data=top_explicatives,
-        y="Description",
-        x="Corr_Cible_Brute",
-        hue="Famille",
-        palette=palette_pro,
-        dodge=False,
-        edgecolor="#2e3440",
-        linewidth=0.6,
-    )
+    sns.barplot( data=top_explicatives, y="Description", x="Corr_Cible_Brute", hue="Famille", palette=palette_pro, dodge=False,
+                 edgecolor="#2e3440", linewidth=0.6, )
 
     plt.axvline(0, color="#2e3440", linestyle="-", linewidth=1.2)
     type_population = "Gardiens de but" if uniquement_gardiens else "Population Globale"
-    plt.title(
-        f"Top {top_n} des variables corrélées à la Valeur Marchande - {type_population}",
-        fontsize=14,
-        fontweight="bold",
-        color="#2e3440",
-        pad=18,
-    )
-    plt.xlabel(
-        "Coefficient de corrélation de Pearson (r) avec market_value_in_eur",
-        fontsize=11,
-        fontweight="semibold",
-        color="#4c566a",
-        labelpad=10,
-    )
+    plt.title( f"Top {top_n} des variables corrélées à la Valeur Marchande - {type_population}", fontsize=14, fontweight="bold", color="#2e3440", pad=18, )
+    plt.xlabel( "Coefficient de corrélation de Pearson (r) avec market_value_in_eur", fontsize=11, fontweight="semibold", color="#4c566a", labelpad=10, )
     plt.ylabel("Indicateurs", fontsize=11, fontweight="semibold", color="#4c566a")
 
     # Placement précis de la légende pour éviter les chevauchements
-    plt.legend(
-        title="Familles de variables",
-        title_fontproperties={"weight": "bold"},
-        bbox_to_anchor=(1.02, 1),
-        loc="upper left",
-        borderaxespad=0,
-        frameon=True,
-        facecolor="#ffffff",
-    )
+    plt.legend( title="Familles de variables", title_fontproperties={"weight": "bold"}, bbox_to_anchor=(1.02, 1),
+                loc="upper left", borderaxespad=0, frameon=True, facecolor="#ffffff", )
 
     # Nettoyage des bordures superflues pour un look épuré
     sns.despine(left=True, bottom=True)
