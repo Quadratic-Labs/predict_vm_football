@@ -14,8 +14,9 @@ from sklearn.svm import SVR
 import time
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import cross_val_predict
-
 from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import MinMaxScaler, PowerTransformer, QuantileTransformer
+from sklearn.base import clone
 
 
 
@@ -198,8 +199,20 @@ def tune_forest(model_class, trial, use_log=False, random_state=42, X_train=None
     return np.sqrt(mean_squared_error(y_val, preds))
 
 
-def tune_xgb(model_class, trial, use_log=False, random_state=42,
-             X_train=None, y_train=None, y_train_log=None, X_val=None, y_val=None):
+import numpy as np
+from sklearn.metrics import mean_squared_error
+
+
+def tune_xgb(
+    model_class,
+    trial,
+    transfo=None,
+    random_state=42,
+    X_train=None,
+    y_train=None,
+    X_val=None,
+    y_val=None,
+):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 500, 5000, step=250),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
@@ -221,20 +234,30 @@ def tune_xgb(model_class, trial, use_log=False, random_state=42,
 
     model = model_class(**params)
 
-    # Sélection de la cible (brute ou log)
-    y_target = y_train_log if use_log else y_train
-    model.fit(X_train, y_target)
+    # Application de la transformation
+    y_tr = (
+        transfo["transform"](y_train) if transfo is not None else y_train.copy()
+    )
+    model.fit(X_train, y_tr)
 
-    # Prédiction et passage à l'échelle d'origine si log
+    # Prédictions et inversion
     preds = model.predict(X_val)
-    if use_log:
-        preds = np.expm1(preds)
+    if transfo is not None:
+        preds = transfo["inverse"](preds)
 
     return np.sqrt(mean_squared_error(y_val, preds))
 
 
-def tune_lgb(model_class, trial, use_log=False, random_state=42,
-             X_train=None, y_train=None, y_train_log=None, X_val=None, y_val=None, ):
+def tune_lgbm(
+    model_class,
+    trial,
+    transfo=None,
+    random_state=42,
+    X_train=None,
+    y_train=None,
+    X_val=None,
+    y_val=None,
+):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 500, 5000, step=250),
         "num_leaves": trial.suggest_int("num_leaves", 15, 255),
@@ -253,22 +276,32 @@ def tune_lgb(model_class, trial, use_log=False, random_state=42,
 
     model = model_class(**params)
 
-    # Sélection de la cible (brute ou log)
-    y_target = y_train_log if use_log else y_train
-    model.fit(X_train, y_target)
+    # Application de la transformation
+    y_tr = (
+        transfo["transform"](y_train) if transfo is not None else y_train.copy()
+    )
+    model.fit(X_train, y_tr)
 
-    # Prédiction et passage à l'échelle d'origine si log
+    # Prédictions et inversion
     preds = model.predict(X_val)
-    if use_log:
-        preds = np.expm1(preds)
+    if transfo is not None:
+        preds = transfo["inverse"](preds)
 
     return np.sqrt(mean_squared_error(y_val, preds))
 
 
-def tune_catboost(model_class, trial, use_log=False, random_state=42,
-                  X_train=None, y_train=None, y_train_log=None, X_val=None, y_val=None, y_val_log=None, ):
-    # Plages de recherche adaptées selon l'utilisation du log
-    if use_log:
+def tune_catboost(
+    model_class,
+    trial,
+    transfo=None,
+    random_state=42,
+    X_train=None,
+    y_train=None,
+    X_val=None,
+    y_val=None,
+):
+    # Adapter la stratégie de recherche si une transformation est appliquée
+    if transfo is not None:
         lr = trial.suggest_float("learning_rate", 0.005, 0.2, log=True)
         patience = max(50, int(100 * (0.05 / lr)))
         iterations_range = (1000, 10000)
@@ -295,20 +328,20 @@ def tune_catboost(model_class, trial, use_log=False, random_state=42,
 
     model = model_class(**params)
 
-    # Sélection de la cible et du jeu d'évaluation
-    if use_log:
-        y_target = y_train_log
-        eval_set = (X_val, y_val_log)
+    # Transformations de y_train et y_val
+    if transfo is not None:
+        y_tr = transfo["transform"](y_train)
+        y_v = transfo["transform"](y_val)
     else:
-        y_target = y_train
-        eval_set = (X_val, y_val)
+        y_tr = y_train.copy()
+        y_v = y_val.copy()
 
-    model.fit(X_train, y_target, eval_set=eval_set, verbose=False)
+    model.fit(X_train, y_tr, eval_set=(X_val, y_v), verbose=False)
 
-    # Prédiction et conversion inverse si log
+    # Prédictions et inversion
     preds = model.predict(X_val)
-    if use_log:
-        preds = np.expm1(preds)
+    if transfo is not None:
+        preds = transfo["inverse"](preds)
 
     return np.sqrt(mean_squared_error(y_val, preds))
 
@@ -606,7 +639,7 @@ def evaluer_ensembles(
     )
 
 
-def comparaison_blend(
+def comparaison_des_blend(
     data,
     modeles_tuned_log,
     pred_val_moyenne,
@@ -860,3 +893,745 @@ def afficher_feature_importances(
     print(importances.head(top_n))
 
     return importances
+
+
+def analyser_transformations_cible(y_train, random_state=42):
+    """Compare visuellement différentes transformations sur la variable cible.
+
+    Parameters:
+    -----------
+    y_train : pd.Series ou array-like
+        Série contenant la variable cible brute.
+    random_state : int, default=42
+        Graine pour le QuantileTransformer.
+
+    Returns:
+    --------
+    dict
+        Dictionnaire contenant les séries transformées.
+    """
+    y_series = (
+        y_train if isinstance(y_train, pd.Series) else pd.Series(y_train)
+    )
+    y_vals = y_series.values.reshape(-1, 1)
+
+    transformations_viz = {
+        "Brute (€)": y_series,
+        "log1p": np.log1p(y_series),
+        "log10": np.log10(y_series),
+        "sqrt": np.sqrt(y_series),
+        "Yeo-Johnson": pd.Series(
+            PowerTransformer(method="yeo-johnson")
+            .fit_transform(y_vals)
+            .flatten(),
+            index=y_series.index,
+        ),
+        "MinMax [0,1]": pd.Series(
+            MinMaxScaler().fit_transform(y_vals).flatten(),
+            index=y_series.index,
+        ),
+        "Rang centile": pd.Series(
+            QuantileTransformer(
+                output_distribution="uniform", random_state=random_state
+            )
+            .fit_transform(y_vals)
+            .flatten(),
+            index=y_series.index,
+        ),
+    }
+
+    fig, axes = plt.subplots(2, 4, figsize=(18, 8))
+
+    for ax, (label, y_t) in zip(axes.flatten(), transformations_viz.items()):
+        ax.hist(y_t, bins=50, color="steelblue", edgecolor="none", alpha=0.85)
+        skew = float(pd.Series(y_t).skew())
+        ax.set_title(f"{label}\nskewness = {skew:.2f}")
+        ax.tick_params(labelsize=7)
+
+    # Masquer le dernier axe inutilisé (7 transformations pour 8 emplacements)
+    if len(transformations_viz) < len(axes.flatten()):
+        fig.delaxes(axes.flatten()[-1])
+
+    plt.suptitle("Distribution de la cible selon la transformation", fontsize=13)
+    plt.tight_layout()
+    plt.show()
+
+    print("Statistiques de la cible brute :")
+    print(y_series.describe())
+
+    return transformations_viz
+
+
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import (
+    MinMaxScaler,
+    PowerTransformer,
+    QuantileTransformer,
+)
+
+
+def preparer_transformations_cible(y_train, random_state=42):
+    """Instancie, ajuste les transformateurs data-dependent sur y_train
+
+    et retourne un dictionnaire de transformations (fonctions transform & inverse).
+
+    Parameters:
+    -----------
+    y_train : pd.Series ou array-like
+        Série de la variable cible sur l'ensemble d'entraînement.
+    random_state : int, default=42
+        Graine pour la reproductibilité des QuantileTransformers.
+
+    Returns:
+    --------
+    dict
+        Dictionnaire contenant les transformations et leurs fonctions inverses.
+    """
+    y_vals = (
+        y_train.values.reshape(-1, 1)
+        if hasattr(y_train, "values")
+        else np.array(y_train).reshape(-1, 1)
+    )
+
+    # 1. Fit des transformateurs data-dependent sur TRAIN uniquement
+    yj_transformer = PowerTransformer(method="yeo-johnson")
+    yj_transformer.fit(y_vals)
+
+    minmax_scaler = MinMaxScaler()
+    minmax_scaler.fit(y_vals)
+
+    quantile_unif = QuantileTransformer(
+        output_distribution="uniform",
+        random_state=random_state,
+        n_quantiles=1000,
+    )
+    quantile_unif.fit(y_vals)
+
+    quantile_norm = QuantileTransformer(
+        output_distribution="normal",
+        random_state=random_state,
+        n_quantiles=1000,
+    )
+    quantile_norm.fit(y_vals)
+
+    # Helper pour sécuriser le formatage des entrées Series/Arrays
+    def _to_2d(y):
+        return (
+            y.values.reshape(-1, 1)
+            if hasattr(y, "values")
+            else np.array(y).reshape(-1, 1)
+        )
+
+    # 2. Dictionnaire de fonctions de transformation / inversion
+    transformations = {
+        "Brute": {
+            "transform": lambda y: y,
+            "inverse": lambda y: np.clip(y, 0, None),
+            "description": "Aucune transformation. MAE en euros bruts.",
+        },
+        "log1p (baseline)": {
+            "transform": lambda y: np.log1p(y),
+            "inverse": lambda y: np.expm1(y),
+            "description": "log(1+y) — transformation de référence. Compresse l'échelle.",
+        },
+        "log10": {
+            "transform": lambda y: np.log10(np.clip(y, 1, None)),
+            "inverse": lambda y: np.power(10, y),
+            "description": "log10(y) — espace plus lisible (6 = 1M€, 7 = 10M€).",
+        },
+        "sqrt": {
+            "transform": lambda y: np.sqrt(y),
+            "inverse": lambda y: np.square(np.clip(y, 0, None)),
+            "description": "Racine carrée — compression plus douce que le log.",
+        },
+        "Yeo-Johnson": {
+            "transform": lambda y: yj_transformer.transform(_to_2d(y)).flatten(),
+            "inverse": lambda y: np.clip(
+                yj_transformer.inverse_transform(_to_2d(y)).flatten(), 0, None
+            ),
+            "description": "Box-Cox généralisée optimisée par maximum de vraisemblance.",
+        },
+        "MinMax [0,1]": {
+            "transform": lambda y: minmax_scaler.transform(_to_2d(y)).flatten(),
+            "inverse": lambda y: np.clip(
+                minmax_scaler.inverse_transform(_to_2d(y)).flatten(), 0, None
+            ),
+            "description": "Normalisation dans [0,1]. Sensible aux outliers.",
+        },
+        "Rang centile [0,1]": {
+            "transform": lambda y: quantile_unif.transform(_to_2d(y)).flatten(),
+            "inverse": lambda y: np.clip(
+                quantile_unif.inverse_transform(_to_2d(y)).flatten(), 0, None
+            ),
+            "description": "Transforme en rangs uniformes [0,1]. Robuste aux outliers.",
+        },
+    }
+
+    print(f"{len(transformations)} transformations définies.")
+    return transformations
+
+
+import numpy as np
+import pandas as pd
+from sklearn.base import clone
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_absolute_percentage_error,
+    mean_squared_error,
+    r2_score,
+)
+from sklearn.model_selection import cross_val_predict
+
+
+def evaluer_complet(label, y_true, y_pred):
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    mape = mean_absolute_percentage_error(y_true, y_pred)
+    r2 = r2_score(y_true, y_pred)
+    rmse_log = np.sqrt(
+        mean_squared_error(
+            np.log1p(y_true), np.log1p(np.clip(y_pred, 0, None))
+        )
+    )
+    return {
+        "Transformation": label,
+        "MAE": mae,
+        "RMSE": rmse,
+        "MAPE": mape,
+        "R²": r2,
+        "RMSE_log": rmse_log,
+    }
+
+
+def evaluer_transformations_stacking(
+    transformations,
+    modeles_dict,
+    data,
+    sample_weights_train=None,
+    cv=5,
+    n_jobs=-1,
+):
+    X_train = data["X_train"]
+    y_train = data["y_train"]
+    X_test = data["X_test"]
+    y_test = data["y_test"]
+
+    y_test_vals = y_test.values if hasattr(y_test, "values") else y_test
+    sw = (
+        sample_weights_train.values
+        if hasattr(sample_weights_train, "values")
+        else sample_weights_train
+    )
+
+    resultats = []
+    predictions_test = {}
+
+    for label, transfo in transformations.items():
+        print(f"\n--- {label} (Stacking OOF) ---")
+        print(f"  {transfo['description'][:80]}...")
+
+        try:
+            y_tr_t = transfo["transform"](y_train)
+
+            oof_preds_dict = {}
+            preds_test_dict = {}
+
+            fit_kwargs = {"sample_weight": sw} if sw is not None else {}
+
+            for nom_m, modele_original in modeles_dict.items():
+                modele = clone(modele_original)
+
+                # Rétrocompatibilité automatique entre fit_params et params
+                try:
+                    oof_t = cross_val_predict(
+                        modele,
+                        X_train,
+                        y_tr_t,
+                        cv=cv,
+                        n_jobs=n_jobs,
+                        fit_params=fit_kwargs,
+                    )
+                except TypeError:
+                    oof_t = cross_val_predict(
+                        modele,
+                        X_train,
+                        y_tr_t,
+                        cv=cv,
+                        n_jobs=n_jobs,
+                        params=fit_kwargs,
+                    )
+
+                oof_preds_dict[nom_m] = oof_t
+
+                modele.fit(X_train, y_tr_t, **fit_kwargs)
+                preds_test_dict[nom_m] = modele.predict(X_test)
+
+            X_meta_train = pd.DataFrame(oof_preds_dict)
+            X_meta_test = pd.DataFrame(preds_test_dict)
+
+            meta_modele = LinearRegression(positive=True)
+            meta_modele.fit(X_meta_train, y_tr_t)
+
+            preds_stack_t = meta_modele.predict(X_meta_test)
+
+            preds_eur = transfo["inverse"](
+                preds_stack_t
+                if isinstance(preds_stack_t, np.ndarray)
+                else np.array(preds_stack_t)
+            )
+
+            res = evaluer_complet(label, y_test_vals, preds_eur)
+            resultats.append(res)
+            predictions_test[label] = preds_eur
+
+            print(
+                f"  → MAPE: {res['MAPE']:.2%} | R²: {res['R²']:.4f} | "
+                f"MAE: {res['MAE']:>10,.0f}€ | RMSE_log: {res['RMSE_log']:.4f}"
+            )
+
+        except Exception as e:
+            print(f"  Erreur lors de l'évaluation de {label} : {e}")
+
+    if not resultats:
+        raise ValueError(
+            "Aucune transformation n'a pu être évaluée avec succès."
+        )
+
+    df_resultats = pd.DataFrame(resultats).sort_values("MAE")
+    return df_resultats, predictions_test
+
+
+def afficher_synthese_transformations(resultats):
+    """Affiche le classement sous forme de tableau formaté et génère 3 barplots
+
+    comparatifs (MAPE, R², RMSE_log) selon les transformations de la cible.
+    """
+    if isinstance(resultats, list):
+        df_res = pd.DataFrame(resultats)
+    else:
+        df_res = resultats.copy()
+
+    if "Transformation" in df_res.columns:
+        df_res = df_res.set_index("Transformation")
+
+    df_res_sorted = df_res.sort_values("MAPE")
+
+    # --- 1. AFFICHAGE DU TABLEAU FORMATÉ ---
+    print("=== CLASSEMENT PAR MAPE (↓ meilleur) ===")
+    df_display = df_res_sorted.copy()
+    df_display["MAE"] = df_display["MAE"].apply(lambda x: f"{x:>12,.0f} €")
+    df_display["RMSE"] = df_display["RMSE"].apply(lambda x: f"{x:>12,.0f} €")
+    df_display["MAPE"] = df_display["MAPE"].apply(lambda x: f"{x:.2%}")
+    df_display["R²"] = df_display["R²"].apply(lambda x: f"{x:.4f}")
+    df_display["RMSE_log"] = df_display["RMSE_log"].apply(lambda x: f"{x:.4f}")
+    print(df_display.to_string())
+
+    # --- 2. GRAPHIQUES BARPLOT ---
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    colors = [
+        "indianred" if "baseline" in str(label).lower() else "steelblue"
+        for label in df_res_sorted.index
+    ]
+
+    # Barplot MAPE
+    df_res_sorted["MAPE"].plot(
+        kind="bar", ax=axes[0], color=colors, edgecolor="none"
+    )
+    axes[0].set_title("MAPE — Test (↓ meilleur)")
+    axes[0].yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda x, _: f"{x:.0%}")
+    )
+    axes[0].tick_params(axis="x", rotation=35)
+
+    # Barplot R²
+    df_res_sorted["R²"].plot(
+        kind="bar", ax=axes[1], color=colors, edgecolor="none"
+    )
+    axes[1].set_title("R² — Test (↑ meilleur)")
+    axes[1].tick_params(axis="x", rotation=35)
+
+    # Barplot RMSE_log
+    df_res_sorted["RMSE_log"].plot(
+        kind="bar", ax=axes[2], color=colors, edgecolor="none"
+    )
+    axes[2].set_title("RMSE log — Test (↓ meilleur)")
+    axes[2].tick_params(axis="x", rotation=35)
+
+    plt.suptitle(
+        "Impact de la transformation de la cible sur les performances",
+        fontsize=13,
+    )
+    plt.tight_layout()
+    plt.show()
+
+    return df_res_sorted
+
+
+def analyser_mape_par_tranches(
+    predictions_test,
+    y_test,
+    tranches=None,
+    labels_tranches=None,
+    figsize_per_plot=(12, 3.5),
+):
+    """Calcule et affiche le MAPE par tranche de montant pour différentes prédictions,
+
+    et génère un barplot pour chaque transformation.
+    """
+    if tranches is None:
+        tranches = [0, 5_000_000, 20_000_000, 50_000_000, np.inf]
+    if labels_tranches is None:
+        labels_tranches = ["<5M€", "5–20M€", "20–50M€", ">50M€"]
+
+    y_test_vals = y_test.values if hasattr(y_test, "values") else y_test
+    n_preds = len(predictions_test)
+
+    # --- 1. AFFICHAGE DU CONSOLE LOG ---
+    header_tranches = " ".join([f"{lbl:>8}" for lbl in labels_tranches])
+    print("=== MAPE PAR TRANCHE SELON LA TRANSFORMATION ===")
+    print(f"{'Transformation':30s} {header_tranches}")
+    print("-" * (31 + 9 * len(labels_tranches)))
+
+    resultats_tranches = []
+
+    # Graphiques
+    fig, axes = plt.subplots(
+        n_preds, 1, figsize=(figsize_per_plot[0], figsize_per_plot[1] * n_preds)
+    )
+    if n_preds == 1:
+        axes = [axes]
+
+    for ax, (label, preds) in zip(axes, predictions_test.items()):
+        df_err = pd.DataFrame({"y": y_test_vals, "pred": preds})
+        df_err["err_pct"] = (df_err["y"] - df_err["pred"]).abs() / df_err["y"]
+        df_err["tranche"] = pd.cut(
+            df_err["y"], bins=tranches, labels=labels_tranches
+        )
+
+        mapes = df_err.groupby("tranche", observed=True)["err_pct"].mean()
+
+        # Log console
+        ligne_str = f"{label:30s} " + " ".join(
+            [f"{mapes.get(lbl, np.nan):>8.1%}" for lbl in labels_tranches]
+        )
+        print(ligne_str)
+
+        # Structure pour DataFrame de sortie
+        res_dict = {"Transformation": label}
+        res_dict.update(
+            {lbl: mapes.get(lbl, np.nan) for lbl in labels_tranches}
+        )
+        resultats_tranches.append(res_dict)
+
+        # Plot
+        mapes.plot(kind="bar", ax=ax, color="steelblue", edgecolor="none")
+        ax.set_title(f"MAPE par tranche — {label}")
+        ax.yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, _: f"{x:.0%}")
+        )
+        ax.tick_params(axis="x", rotation=0)
+
+    plt.tight_layout()
+    plt.show()
+
+    return pd.DataFrame(resultats_tranches).set_index("Transformation")
+
+
+def preparer_meilleure_transformation(
+    df_res,
+    transformations,
+    y_train,
+    y_val,
+    y_test,
+    metric="MAPE",
+    ascending=True,
+):
+    """Identifie la meilleure transformation selon une métrique donnée et prépare
+
+    les séries cibles (y_train, y_val, y_test) transformées.
+
+    Parameters:
+    -----------
+    df_res : pd.DataFrame
+        Tableau de résultats (indexé par le nom des transformations ou contenant
+        la colonne 'Transformation').
+    transformations : dict
+        Dictionnaire des transformations définies.
+    y_train, y_val, y_test : pd.Series
+        Séries originales de la cible.
+    metric : str, default='MAPE'
+        Métrique servant au classement ('MAPE', 'MAE', 'R²', 'RMSE_log').
+    ascending : bool, default=True
+        True si une valeur plus faible est meilleure (MAPE, MAE), False sinon
+        (R²).
+
+    Returns:
+    --------
+    dict:
+        Contient le nom de la meilleure transformation, les séries cibles
+        transformées (y_tr_best, y_val_best, y_te_best) et l'objet de la
+        transformation.
+    """
+    # Alignement du DataFrame si 'Transformation' est une colonne
+    if "Transformation" in df_res.columns:
+        df_res_idx = df_res.set_index("Transformation")
+    else:
+        df_res_idx = df_res
+
+    # Identification de la meilleure transformation
+    if ascending:
+        meilleure_transfo = df_res_idx[metric].idxmin()
+    else:
+        meilleure_transfo = df_res_idx[metric].idxmax()
+
+    # Affichage des métriques clés
+    print(f"=== SÉLECTION DE LA MEILLEURE TRANSFORMATION ({metric}) ===")
+    print(f"Meilleure transformation : {meilleure_transfo}")
+    print(f"MAPE : {df_res_idx.loc[meilleure_transfo, 'MAPE']:.2%}")
+    print(f"R²   : {df_res_idx.loc[meilleure_transfo, 'R²']:.4f}")
+    if "MAE" in df_res_idx.columns:
+        print(f"MAE  : {df_res_idx.loc[meilleure_transfo, 'MAE']:>10,.0f} €")
+
+    # Application de la transformation
+    transfo_best = transformations[meilleure_transfo]
+    y_tr_best = pd.Series(
+        transfo_best["transform"](y_train), index=y_train.index
+    )
+    y_val_best = pd.Series(
+        transfo_best["transform"](y_val), index=y_val.index
+    )
+    y_te_best = pd.Series(transfo_best["transform"](y_test), index=y_test.index)
+
+    print(
+        f"\nDistribution de la cible transformée Train ({meilleure_transfo}) :"
+    )
+    print(y_tr_best.describe())
+    print(f"Skewness : {y_tr_best.skew():.3f}\n")
+
+    return {
+        "nom": meilleure_transfo,
+        "transfo": transfo_best,
+        "y_tr_best": y_tr_best,
+        "y_val_best": y_val_best,
+        "y_te_best": y_te_best,
+    }
+
+
+import numpy as np
+import pandas as pd
+from sklearn.base import clone
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_percentage_error
+from sklearn.model_selection import cross_val_predict
+
+
+def entrainer_et_evaluer_stacking_tuned(
+    modeles_dict,
+    transfo_dict,
+    meilleure_transfo_label,
+    data,
+    sample_weights_train=None,
+    cv=5,
+    n_jobs=-1,
+    evaluer_fn=None,
+):
+    """Génère les prédictions OOF, ré-entraîne les modèles de base tunés,
+
+    ajuste le méta-modèle LinearRegression et évalue le pipeline complet.
+    """
+    X_train, y_train = data["X_train"], data["y_train"]
+    X_val, y_val = data["X_val"], data["y_val"]
+    X_test, y_test = data["X_test"], data["y_test"]
+
+    y_test_vals = y_test.values if hasattr(y_test, "values") else y_test
+    sw = (
+        sample_weights_train.values
+        if hasattr(sample_weights_train, "values")
+        else sample_weights_train
+    )
+
+    # Récupération de la transformation sélectionnée
+    transfo = transfo_dict[meilleure_transfo_label]
+    fn_inv = transfo.get("inverse") or transfo.get("inverse_transform")
+
+    y_tr_best = transfo["transform"](y_train)
+    y_val_best = transfo["transform"](y_val)
+
+    # 1. Génération des prédictions OOF
+    print("Génération OOF...")
+    oof = {}
+    fit_kwargs = {"sample_weight": sw} if sw is not None else {}
+
+    for nom, m in modeles_dict.items():
+        m_clone = clone(m)
+        try:
+            oof_t = cross_val_predict(
+                m_clone,
+                X_train,
+                y_tr_best,
+                cv=cv,
+                n_jobs=n_jobs,
+                fit_params=fit_kwargs,
+            )
+        except TypeError:
+            oof_t = cross_val_predict(
+                m_clone,
+                X_train,
+                y_tr_best,
+                cv=cv,
+                n_jobs=n_jobs,
+                params=fit_kwargs,
+            )
+
+        oof[nom] = oof_t
+        preds_eur_oof = fn_inv(oof_t)
+        mape_oof = mean_absolute_percentage_error(y_train, preds_eur_oof)
+        print(f"  {nom}: OOF MAPE = {mape_oof:.2%}")
+
+    X_meta_tr = pd.DataFrame(oof)
+
+    # 2. Ré-entraînement complet des modèles de base
+    modeles_fit = {}
+    preds_val_dict = {}
+    preds_test_dict = {}
+
+    for nom, m in modeles_dict.items():
+        m_fit = clone(m)
+
+        # Gestion spécifique CatBoost (ou prévenance early_stopping)
+        if "CatBoost" in m_fit.__class__.__name__:
+            m_fit.fit(
+                X_train,
+                y_tr_best,
+                eval_set=(X_val, y_val_best),
+                sample_weight=sw,
+                verbose=False,
+            )
+        else:
+            m_fit.fit(X_train, y_tr_best, **fit_kwargs)
+
+        modeles_fit[nom] = m_fit
+        preds_val_dict[nom] = m_fit.predict(X_val)
+        preds_test_dict[nom] = m_fit.predict(X_test)
+
+    X_meta_val = pd.DataFrame(preds_val_dict)
+    X_meta_te = pd.DataFrame(preds_test_dict)
+
+    # 3. Méta-modèle LinearRegression (poids positifs)
+    meta = LinearRegression(positive=True)
+    meta.fit(X_meta_tr, y_tr_best)
+
+    poids = {
+        nom: round(w, 3) for nom, w in zip(modeles_dict.keys(), meta.coef_)
+    }
+    print(f"Poids méta : {poids}")
+
+    # 4. Prédictions finales et évaluation
+    preds_test_stack_t = meta.predict(X_meta_te)
+    pred_test_tuned_eur = fn_inv(
+        preds_test_stack_t
+        if isinstance(preds_test_stack_t, np.ndarray)
+        else np.array(preds_test_stack_t)
+    )
+
+    label_res = f"Tuné + Stack ({meilleure_transfo_label})"
+    if evaluer_fn is not None:
+        res_tuned = evaluer_fn(label_res, y_test_vals, pred_test_tuned_eur)
+    else:
+        res_tuned = {
+            "Transformation": label_res,
+            "MAPE": mean_absolute_percentage_error(
+                y_test_vals, pred_test_tuned_eur
+            ),
+            "MAE": np.mean(np.abs(y_test_vals - pred_test_tuned_eur)),
+        }
+
+    print(f"\n=== RÉSULTAT FINAL ({label_res}) ===")
+    print(f"  MAPE     : {res_tuned['MAPE']:.2%}")
+    if "R²" in res_tuned:
+        print(f"  R²       : {res_tuned['R²']:.4f}")
+    print(f"  MAE      : {res_tuned['MAE']:>12,.0f} €")
+    if "RMSE_log" in res_tuned:
+        print(f"  RMSE_log : {res_tuned['RMSE_log']:.4f}")
+
+    return {
+        "resultat": res_tuned,
+        "predictions_test_eur": pred_test_tuned_eur,
+        "meta_model": meta,
+        "modeles_base_fit": modeles_fit,
+        "poids_meta": poids,
+    }
+
+
+import pandas as pd
+
+
+def afficher_classement_final(
+    resultats, reference=None, sort_by="MAPE", ascending=True
+):
+    """Génère et affiche le classement final des modèles/transformations.
+
+    Parameters:
+    -----------
+    resultats : list ou pd.DataFrame
+        Liste de dictionnaires ou DataFrame contenant les métriques d'évaluation.
+    reference : dict, optional
+        Dictionnaire représentant une ligne de référence à ajouter (ex: v4_ref).
+    sort_by : str, default='MAPE'
+        Métrique sur laquelle trier le classement.
+    ascending : bool, default=True
+        Sens du tri (True pour MAPE/MAE/RMSE, False pour R²).
+
+    Returns:
+    --------
+    pd.DataFrame:
+        DataFrame bruts filtrés et triés (non formatés en chaîne) pour réutilisation.
+    """
+    # 1. Normalisation des données en DataFrame
+    if isinstance(resultats, list):
+        data_list = list(resultats)
+    elif isinstance(resultats, pd.DataFrame):
+        data_list = resultats.to_dict(orient="records")
+    else:
+        raise TypeError("resultats doit être une liste ou un pd.DataFrame")
+
+    # Ajout de la référence si fournie
+    if reference is not None:
+        data_list.append(reference)
+
+    df_final = pd.DataFrame(data_list)
+
+    # Passage en index de la colonne Transformation si présente
+    if "Transformation" in df_final.columns:
+        df_final = df_final.set_index("Transformation")
+
+    # 2. Tri du DataFrame
+    df_sorted = df_final.sort_values(by=sort_by, ascending=ascending)
+
+    # 3. Formatage à l'affichage (sur une copie pour préserver les valeurs numériques brutes)
+    df_display = df_sorted.copy()
+
+    for col in df_display.columns:
+        if col == "MAPE":
+            df_display[col] = df_display[col].apply(
+                lambda x: f"{x:.2%}" if pd.notnull(x) else "—"
+            )
+        elif col in ["MAE", "RMSE"]:
+            df_display[col] = df_display[col].apply(
+                lambda x: f"{x:>12,.0f} €" if pd.notnull(x) else "—"
+            )
+        elif col in ["R²", "RMSE_log"]:
+            df_display[col] = df_display[col].apply(
+                lambda x: f"{x:.4f}" if pd.notnull(x) else "—"
+            )
+
+    cols_to_show = [
+        c for c in ["MAPE", "R²", "MAE", "RMSE_log"] if c in df_display.columns
+    ]
+
+    print("=== CLASSEMENT FINAL ===")
+    print(df_display[cols_to_show].to_string())
+
+    return df_sorted
