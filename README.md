@@ -2,8 +2,6 @@
 
 Projet de prédiction de la **valeur marchande (VM)** des joueurs de football à partir de leurs statistiques de performance, données de club, classements et historique de blessures.
 
-> ⚠️ Certaines sections ci-dessous (contexte, sources de données, licence) sont rédigées à partir de la structure du repo — à relire et corriger si besoin.
-
 ## Sommaire
 
 - [Contexte](#contexte)
