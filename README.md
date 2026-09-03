@@ -7,13 +7,13 @@ Périmètre : les **5 grands championnats européens** (Big 5 : Angleterre, Espa
 ## Sommaire
 
 - [Contexte](#contexte)
+- [Installation](#installation)
+- [Utilisation](#utilisation)
 - [Pipeline du projet](#pipeline-du-projet)
 - [Sources de données](#sources-de-données)
 - [Construction de la base d'apprentissage](#construction-de-la-base-dapprentissage)
 - [Nettoyage et préparation](#nettoyage-et-préparation)
 - [Feature engineering](#feature-engineering)
-- [Installation](#installation)
-- [Utilisation](#utilisation)
 - [Modélisation baseline](#modélisation-baseline)
 - [Approche de modélisation](#approche-de-modélisation)
 - [Modèle final retenu](#modèle-final-retenu)
@@ -23,6 +23,54 @@ Périmètre : les **5 grands championnats européens** (Big 5 : Angleterre, Espa
 ## Contexte
 
 Ce projet a été développé dans le cadre d'un stage. Il vise à construire un modèle de machine learning capable d'estimer la valeur marchande d'un joueur de football à partir de ses statistiques de performance, de son contexte collectif (classement du club, niveau du championnat) et de son historique médical (blessures).
+
+## Installation
+
+### Prérequis
+
+- Python 3.x
+- PowerShell pour `install.ps1`
+- Un compte [Kaggle](https://www.kaggle.com) (API) pour télécharger les datasets Transfermarkt et FIFA ranking
+
+### Étapes
+
+```bash
+# Cloner le repo
+git clone <https://github.com/Quadratic-Labs/predict_vm_football.git>
+cd predict_vm_football
+
+# Créer et activer un environnement virtuel
+python -m venv .venv
+.venv\Scripts\activate
+
+# Installer les dépendances
+pip install -r requirements.txt
+```
+
+Sous Windows, le script `install.ps1` peut automatiser cette installation :
+
+```powershell
+.\install.ps1
+```
+
+### Configuration de l'API Kaggle
+
+Créer un fichier `.env` à la racine du projet (non versionné) avec :
+
+```
+KAGGLE_USERNAME=votre_nom_d_utilisateur
+KAGGLE_API_TOKEN=votre_cle_api
+```
+
+Le token s'obtient depuis le profil Kaggle > **Settings** > section **API** > **Generate New API Token**.
+
+## Utilisation
+
+1. Activer l'environnement virtuel (`.venv`).
+2. Renseigner le fichier `.env` (identifiants Kaggle).
+3. Exécuter les notebooks dans l'ordre numéroté (`01_...` à `09_...`) depuis le dossier `notebooks/`.
+4. Les données intermédiaires et finales sont stockées dans `data_finale/`, les résultats et figures dans `outputs/`.
+
 
 
 ## Pipeline du projet
@@ -86,52 +134,6 @@ Les jeux finaux (`train.csv`, `val.csv`, `test.csv`, `en_cours.csv`) sont export
 Le notebook `06_feature_engineering.ipynb` applique une fonction unique (`generer_feature_engineering`) aux quatre jeux (`train`, `val`, `test`, `en_cours`) issus du nettoyage, afin de créer de nouvelles variables susceptibles d'améliorer la prédiction. La base passe à **151 colonnes** au total. Les jeux enrichis sont exportés dans `data_finale/featuring/` (`train_featured.csv`, `val_featured.csv`, `test_featured.csv`, `en_cours_featured.csv`).
 
 
-## Installation
-
-### Prérequis
-
-- Python 3.x
-- PowerShell pour `install.ps1`
-- Un compte [Kaggle](https://www.kaggle.com) (API) pour télécharger les datasets Transfermarkt et FIFA ranking
-
-### Étapes
-
-```bash
-# Cloner le repo
-git clone <https://github.com/Quadratic-Labs/predict_vm_football.git>
-cd predict_vm_football
-
-# Créer et activer un environnement virtuel
-python -m venv .venv
-.venv\Scripts\activate
-
-# Installer les dépendances
-pip install -r requirements.txt
-```
-
-Sous Windows, le script `install.ps1` peut automatiser cette installation :
-
-```powershell
-.\install.ps1
-```
-
-### Configuration de l'API Kaggle
-
-Créer un fichier `.env` à la racine du projet (non versionné) avec :
-
-```
-KAGGLE_USERNAME=votre_nom_d_utilisateur
-KAGGLE_API_TOKEN=votre_cle_api
-```
-
-Le token s'obtient depuis le profil Kaggle > **Settings** > section **API** > **Generate New API Token**.
-
-## Utilisation
-
-1. Activer l'environnement virtuel (`.venv`).
-2. Renseigner le fichier `.env` (identifiants Kaggle).
-3. Exécuter les notebooks dans l'ordre numéroté (`01_...` à `09_...`) depuis le dossier `notebooks/`.
-4. Les données intermédiaires et finales sont stockées dans `data_finale/`, les résultats et figures dans `outputs/`.
 
 ## Modélisation baseline
 
