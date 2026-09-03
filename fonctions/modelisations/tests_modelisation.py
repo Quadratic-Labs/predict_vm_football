@@ -1,6 +1,7 @@
 import numpy as np
+import optuna
 import pandas as pd
-from sklearn.linear_model import ElasticNet
+import matplotlib.pyplot as plt
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import (
     mean_absolute_error,
@@ -12,11 +13,16 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 import time
-from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import cross_val_predict
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler, PowerTransformer, QuantileTransformer
 from sklearn.base import clone
+from catboost import CatBoostRegressor
+
+from sklearn.decomposition import PCA
+from sklearn.impute import SimpleImputer
+from sklearn.inspection import permutation_importance
+from matplotlib.patches import Patch
 
 
 
@@ -26,28 +32,22 @@ def preparer_donnees(df_train, df_val, df_test, colonne_cible):
     calcule les cibles log & sample weights, et génère des versions
     sans NaN pour les modèles linéaires/SVR.
     """
-    # 1. Suppression des lignes avec valeur manquante sur la cible
+    # Suppression des lignes avec valeur manquante sur la cible
     df_train = df_train.dropna(subset=[colonne_cible])
     df_val = df_val.dropna(subset=[colonne_cible])
     df_test = df_test.dropna(subset=[colonne_cible])
 
-    # 2. Suppression des colonnes normalisées (_nor)
+    # Suppression des colonnes normalisées (_nor)
     colonnes_nor = [c for c in df_train.columns if c.endswith("_nor")]
     df_train = df_train.drop(columns=colonnes_nor, errors="ignore")
     df_val = df_val.drop(columns=colonnes_nor, errors="ignore")
     df_test = df_test.drop(columns=colonnes_nor, errors="ignore")
 
-    # 3. Définition et vérification des colonnes à exclure des features
-    cols_a_supprimer_base = [
-        colonne_cible,
-        "player",
-        "team",
-        "nation",
-        "position",
-    ]
+    # Définition et vérification des colonnes à exclure des features
+    cols_a_supprimer_base = [ colonne_cible, "player", "team", "nation", "position", ]
     cols_a_supprimer = [c for c in cols_a_supprimer_base if c in df_train.columns]
 
-    # 4. Séparation des features (X) et de la cible (y)
+    # Séparation des features (X) et de la cible (y)
     X_train = df_train.drop(columns=cols_a_supprimer)
     y_train = df_train[colonne_cible]
 
@@ -57,21 +57,19 @@ def preparer_donnees(df_train, df_val, df_test, colonne_cible):
     X_test = df_test.drop(columns=cols_a_supprimer)
     y_test = df_test[colonne_cible]
 
-    # 5. Cibles log (log1p)
+    # Cibles log (log1p)
     y_train_log = np.log1p(y_train)
     y_val_log = np.log1p(y_val)
     y_test_log = np.log1p(y_test)
 
-    # 6. Poids d'entraînement (sur-pondération des petites valeurs)
+    # Poids d'entraînement (sur-pondération des petites valeurs)
     sample_weights_train = 1 / np.log1p(y_train)
     sample_weights_train = sample_weights_train / sample_weights_train.mean()
 
-    # 7. Sélection des colonnes sans aucun NaN (basée sur le train set)
+    # Sélection des colonnes sans aucun NaN (basée sur le train set)
     colonnes_sans_nan = X_train.columns[X_train.isna().sum() == 0].tolist()
 
-    print(
-        f"X_train : {X_train.shape} | X_val : {X_val.shape} | X_test : {X_test.shape}"
-    )
+    print( f"X_train : {X_train.shape} | X_val : {X_val.shape} | X_test : {X_test.shape}" )
     print("Filtrage pour les modèles linéaires/SVR :")
     print(f"{len(colonnes_sans_nan)} colonnes conservées sur {X_train.shape[1]}.")
 
@@ -149,11 +147,9 @@ def evaluer_modeles(modeles, data, colonne_cible="value", mode="val"):
             f"R² Ajusté {label_eval}": r2_ajuste,
         }
 
-        print(
-            f"   -> {label_eval} | MAE : {mae:,.0f} € | RMSE : {rmse:,.0f} € | MAPE : {mape:.2%} | R² : {r2:.2%} | R² Ajusté : {r2_ajuste:.2%}"
-        )
+        print( f"   -> {label_eval} | MAE : {mae:,.0f} € | RMSE : {rmse:,.0f} € | MAPE : {mape:.2%} | R² : {r2:.2%} | R² Ajusté : {r2_ajuste:.2%}" )
 
-    print(f"\nCLASSEMENT FINAL {label_eval} (trié par MAE croissante)")
+    print(f"\nClassement final {label_eval} (trié par MAE croissante)")
     tableau = []
     for nom, m in resultats.items():
         tableau.append(
@@ -173,7 +169,8 @@ def evaluer_modeles(modeles, data, colonne_cible="value", mode="val"):
     return df_resultats, resultats
 
 
-def tune_forest(model_class, trial, use_log=False, random_state=42, X_train=None, y_train=None, y_train_log=None, X_val=None, y_val=None):
+def tune_forest(model_class, trial, use_log=False, random_state=42, X_train=None, y_train=None,
+                y_train_log=None, X_val=None, y_val=None):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 200, 1000, step=100),
         "max_depth": trial.suggest_int("max_depth", 5, 40),
@@ -199,20 +196,7 @@ def tune_forest(model_class, trial, use_log=False, random_state=42, X_train=None
     return np.sqrt(mean_squared_error(y_val, preds))
 
 
-import numpy as np
-from sklearn.metrics import mean_squared_error
-
-
-def tune_xgb(
-    model_class,
-    trial,
-    transfo=None,
-    random_state=42,
-    X_train=None,
-    y_train=None,
-    X_val=None,
-    y_val=None,
-):
+def tune_xgb( model_class, trial, transfo=None, random_state=42, X_train=None, y_train=None, X_val=None, y_val=None, ):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 500, 5000, step=250),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
@@ -248,16 +232,7 @@ def tune_xgb(
     return np.sqrt(mean_squared_error(y_val, preds))
 
 
-def tune_lgbm(
-    model_class,
-    trial,
-    transfo=None,
-    random_state=42,
-    X_train=None,
-    y_train=None,
-    X_val=None,
-    y_val=None,
-):
+def tune_lgbm( model_class, trial, transfo=None, random_state=42, X_train=None, y_train=None, X_val=None, y_val=None, ):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 500, 5000, step=250),
         "num_leaves": trial.suggest_int("num_leaves", 15, 255),
@@ -290,16 +265,7 @@ def tune_lgbm(
     return np.sqrt(mean_squared_error(y_val, preds))
 
 
-def tune_catboost(
-    model_class,
-    trial,
-    transfo=None,
-    random_state=42,
-    X_train=None,
-    y_train=None,
-    X_val=None,
-    y_val=None,
-):
+def tune_catboost( model_class, trial, transfo=None, random_state=42, X_train=None, y_train=None, X_val=None, y_val=None, ):
     # Adapter la stratégie de recherche si une transformation est appliquée
     if transfo is not None:
         lr = trial.suggest_float("learning_rate", 0.005, 0.2, log=True)
@@ -453,24 +419,25 @@ def evaluer_modeles_tuned( modeles_tuned, modeles_tuned_sans_nan, data, mode="va
 
     resultats = {}
 
-    # 1. Évaluation des modèles standards
+    # Évaluation des modèles standards
     for nom, modele in modeles_tuned.items():
         print(f"Entraînement (tuné) de {nom}...")
         resultats[nom] = evaluer(
             modele, data["X_train"], y_train_target, X_eval, y_eval
         )
 
-    # 2. Évaluation des modèles sans NaN (Pipelines)
-    for nom, modele in modeles_tuned_sans_nan.items():
-        print(f"Entraînement (tuné) de {nom}...")
-        resultats[nom] = evaluer(
-            modele, data["X_train_sans_nan"], y_train_target, X_eval_sn, y_eval
-        )
+    # Évaluation des modèles sans NaN
+    if modeles_tuned_sans_nan:
+        for nom, modele in modeles_tuned_sans_nan.items():
+            print(f"Entraînement (tuné) de {nom}...")
+            resultats[nom] = evaluer(
+                modele, data["X_train_sans_nan"], y_train_target, X_eval_sn, y_eval
+            )
 
     # Construction du tableau récapitulatif
     df_resultats = pd.DataFrame(resultats).T.sort_values("MAE")
 
-    print(f"\nCLASSEMENT ({label}, modèles tunés)")
+    print(f"\nClassement ({label}, modèles tunés)")
     print(df_resultats)
 
     return df_resultats
@@ -496,25 +463,23 @@ def preparer_meta_features(
     preds_test_base = {}
     temps_entrainement = {}
 
-    print(
-        f"Génération des OOF predictions (cross_val_predict, cv={cv})..."
-    )
+    print( f"Génération des OOF predictions (cross_val_predict, cv={cv})..." )
 
     for nom in base_models_names:
         debut_modele = time.time()
         modele = modeles_dict[nom]
 
-        # 1. Génération des OOF sur Train
+        # Génération des OOF sur train
         oof_log = cross_val_predict(
             modele, X_train, y_train_log, cv=cv, n_jobs=n_jobs
         )
         oof_preds[nom] = np.expm1(oof_log)
 
-        # 2. Re-fit du modèle sur TOUT le train + prédictions Test
+        # Re-fit du modèle sur tout le train + prédictions test
         modele.fit(X_train, y_train_log)
         preds_test_base[nom] = np.expm1(modele.predict(X_test))
 
-        # 3. Prédictions sur le jeu de Validation
+        # Prédictions sur le jeu de Validation
         preds_val_base[nom] = np.expm1(modele.predict(X_val))
 
         duree = time.time() - debut_modele
@@ -530,18 +495,8 @@ def preparer_meta_features(
     return X_meta_train, X_meta_val, X_meta_test, temps_entrainement
 
 
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, r2_score
-
-
-def evaluer_ensembles(
-    X_meta_train,
-    X_meta_val,
-    X_meta_test,
-    data,
-    modeles_tuned_log,
-    nom_modele_seul="CatBoost (log)",
-):
+def evaluer_ensembles( X_meta_train, X_meta_val, X_meta_test, data, modeles_tuned_log,
+                      nom_modele_seul="CatBoost (log)", ):
     """Calcule les prédictions par moyenne et par stacking OOF, puis construit le DataFrame de comparaison.
 
     Returns:
@@ -561,14 +516,10 @@ def evaluer_ensembles(
     pred_test_moyenne = X_meta_test.mean(axis=1)
 
     print("Blend (moyenne simple)")
-    print(
-        f"  Val  -> MAE : {mean_absolute_error(y_val, pred_val_moyenne):,.0f} € | "
-        f"R² : {r2_score(y_val, pred_val_moyenne):.4f}"
-    )
-    print(
-        f"  Test -> MAE : {mean_absolute_error(y_test, pred_test_moyenne):,.0f} € | "
-        f"R² : {r2_score(y_test, pred_test_moyenne):.4f}"
-    )
+    print( f"  Val  -> MAE : {mean_absolute_error(y_val, pred_val_moyenne):,.0f} € | "
+        f"R² : {r2_score(y_val, pred_val_moyenne):.4f}" )
+    print( f"  Test -> MAE : {mean_absolute_error(y_test, pred_test_moyenne):,.0f} € | "
+        f"R² : {r2_score(y_test, pred_test_moyenne):.4f}" )
 
     # Blend 2 : stacking OOF (méta-modèle entraîné sur les prédictions OOF)
     debut_meta = time.time()
@@ -583,14 +534,10 @@ def evaluer_ensembles(
     print(f"\nPoids appris par le méta-modèle : {poids}")
     print(f"Intercept : {meta_modele.intercept_:,.0f} €")
     print("\nStacking OOF (méta-modèle)")
-    print(
-        f"  Val  -> MAE : {mean_absolute_error(y_val, pred_val_stack):,.0f} € | "
-        f"R² : {r2_score(y_val, pred_val_stack):.4f}"
-    )
-    print(
-        f"  Test -> MAE : {mean_absolute_error(y_test, pred_test_stack):,.0f} € | "
-        f"R² : {r2_score(y_test, pred_test_stack):.4f}\n"
-    )
+    print( f"  Val  -> MAE : {mean_absolute_error(y_val, pred_val_stack):,.0f} € | "
+        f"R² : {r2_score(y_val, pred_val_stack):.4f}" )
+    print( f"  Test -> MAE : {mean_absolute_error(y_test, pred_test_stack):,.0f} € | "
+        f"R² : {r2_score(y_test, pred_test_stack):.4f}\n" )
 
     # Prédictions du modèle seul pour comparaison
     modele_seul = modeles_tuned_log[nom_modele_seul]
@@ -629,25 +576,12 @@ def evaluer_ensembles(
 
     print(comparaison_blend)
 
-    return (
-        pred_val_moyenne,
-        pred_test_moyenne,
-        pred_val_stack,
-        pred_test_stack,
-        meta_modele,
-        comparaison_blend,
-    )
+    return (pred_val_moyenne, pred_test_moyenne, pred_val_stack, pred_test_stack,
+            meta_modele, comparaison_blend)
 
 
-def comparaison_des_blend(
-    data,
-    modeles_tuned_log,
-    pred_val_moyenne,
-    pred_test_moyenne,
-    pred_val_stack,
-    pred_test_stack,
-    nom_modele_seul="CatBoost (log)",
-):
+def comparaison_des_blend(data, modeles_tuned_log, pred_val_moyenne, pred_test_moyenne,
+                          pred_val_stack, pred_test_stack, nom_modele_seul="CatBoost (log)", ):
     """Construit et affiche le DataFrame de comparaison entre le meilleur modèle seul,
 
     le blend par moyenne et le blend par stacking.
@@ -714,18 +648,8 @@ def comparaison_des_blend(
     return comparaison_blend
 
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-
-
-def analyser_erreurs_par_tranches(
-    y_test,
-    meilleure_prediction_test,
-    tranches=None,
-    labels_tranches=None,
-    random_state=42,
-):
+def analyser_erreurs_par_tranches(y_test, meilleure_prediction_test, tranches=None,
+                                  labels_tranches=None, random_state=42):
     """Analyse les erreurs de prédiction par tranches de valeur réelle et génère les graphiques associés.
 
     Parameters:
@@ -782,7 +706,7 @@ def analyser_erreurs_par_tranches(
 
     print(synthese_tranches)
 
-    # Figure 1 : Graphiques à barres (MAPE & % de l'erreur totale)
+    # Figure 1 : Graphiques à barres
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
     synthese_tranches["MAPE"].plot(kind="bar", ax=axes[0], color="steelblue")
@@ -826,18 +750,8 @@ def analyser_erreurs_par_tranches(
     return synthese_tranches
 
 
-import matplotlib.pyplot as plt
-import pandas as pd
-
-
-def afficher_feature_importances(
-    modele,
-    feature_names,
-    top_n=25,
-    nom_modele="Modèle",
-    figsize=(8, 8),
-    color="teal",
-):
+def afficher_feature_importances(modele, feature_names, top_n=25, nom_modele="Modèle",
+                                 figsize=(8, 8), color="teal", ):
     """Calcule et affiche l'importance des variables pour un modèle donné.
 
     Parameters:
@@ -873,14 +787,10 @@ def afficher_feature_importances(
             modele.coef_[0] if modele.coef_.ndim > 1 else modele.coef_
         )
     else:
-        raise ValueError(
-            f"Le modèle {type(modele).__name__} ne possède pas d'attribut d'importance des variables direct."
-        )
+        raise ValueError( f"Le modèle {type(modele).__name__} ne possède pas d'attribut d'importance des variables direct." )
 
     # Création et tri de la série
-    importances = pd.Series(raw_importances, index=feature_names).sort_values(
-        ascending=False
-    )
+    importances = pd.Series(raw_importances, index=feature_names).sort_values(ascending=False)
 
     # Graphique
     plt.figure(figsize=figsize)
@@ -948,7 +858,7 @@ def analyser_transformations_cible(y_train, random_state=42):
         ax.set_title(f"{label}\nskewness = {skew:.2f}")
         ax.tick_params(labelsize=7)
 
-    # Masquer le dernier axe inutilisé (7 transformations pour 8 emplacements)
+    # Masquer le dernier axe inutilisé
     if len(transformations_viz) < len(axes.flatten()):
         fig.delaxes(axes.flatten()[-1])
 
@@ -960,15 +870,6 @@ def analyser_transformations_cible(y_train, random_state=42):
     print(y_series.describe())
 
     return transformations_viz
-
-
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import (
-    MinMaxScaler,
-    PowerTransformer,
-    QuantileTransformer,
-)
 
 
 def preparer_transformations_cible(y_train, random_state=42):
@@ -994,7 +895,7 @@ def preparer_transformations_cible(y_train, random_state=42):
         else np.array(y_train).reshape(-1, 1)
     )
 
-    # 1. Fit des transformateurs data-dependent sur TRAIN uniquement
+    # Fit des transformateurs data-dependent sur train uniquement
     yj_transformer = PowerTransformer(method="yeo-johnson")
     yj_transformer.fit(y_vals)
 
@@ -1023,7 +924,7 @@ def preparer_transformations_cible(y_train, random_state=42):
             else np.array(y).reshape(-1, 1)
         )
 
-    # 2. Dictionnaire de fonctions de transformation / inversion
+    # Dictionnaire de fonctions de transformation / inversion
     transformations = {
         "Brute": {
             "transform": lambda y: y,
@@ -1033,17 +934,17 @@ def preparer_transformations_cible(y_train, random_state=42):
         "log1p (baseline)": {
             "transform": lambda y: np.log1p(y),
             "inverse": lambda y: np.expm1(y),
-            "description": "log(1+y) — transformation de référence. Compresse l'échelle.",
+            "description": "log(1+y) : transformation de référence.",
         },
         "log10": {
             "transform": lambda y: np.log10(np.clip(y, 1, None)),
             "inverse": lambda y: np.power(10, y),
-            "description": "log10(y) — espace plus lisible (6 = 1M€, 7 = 10M€).",
+            "description": "log10(y) : espace plus lisible (6 = 1M€, 7 = 10M€).",
         },
         "sqrt": {
             "transform": lambda y: np.sqrt(y),
             "inverse": lambda y: np.square(np.clip(y, 0, None)),
-            "description": "Racine carrée — compression plus douce que le log.",
+            "description": "Racine carrée : compression plus douce que le log.",
         },
         "Yeo-Johnson": {
             "transform": lambda y: yj_transformer.transform(_to_2d(y)).flatten(),
@@ -1057,32 +958,19 @@ def preparer_transformations_cible(y_train, random_state=42):
             "inverse": lambda y: np.clip(
                 minmax_scaler.inverse_transform(_to_2d(y)).flatten(), 0, None
             ),
-            "description": "Normalisation dans [0,1]. Sensible aux outliers.",
+            "description": "Normalisation dans [0,1], sensible aux outliers.",
         },
         "Rang centile [0,1]": {
             "transform": lambda y: quantile_unif.transform(_to_2d(y)).flatten(),
             "inverse": lambda y: np.clip(
                 quantile_unif.inverse_transform(_to_2d(y)).flatten(), 0, None
             ),
-            "description": "Transforme en rangs uniformes [0,1]. Robuste aux outliers.",
+            "description": "Transforme en rangs uniformes [0,1], robuste aux outliers.",
         },
     }
 
     print(f"{len(transformations)} transformations définies.")
     return transformations
-
-
-import numpy as np
-import pandas as pd
-from sklearn.base import clone
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import (
-    mean_absolute_error,
-    mean_absolute_percentage_error,
-    mean_squared_error,
-    r2_score,
-)
-from sklearn.model_selection import cross_val_predict
 
 
 def evaluer_complet(label, y_true, y_pred):
@@ -1105,14 +993,8 @@ def evaluer_complet(label, y_true, y_pred):
     }
 
 
-def evaluer_transformations_stacking(
-    transformations,
-    modeles_dict,
-    data,
-    sample_weights_train=None,
-    cv=5,
-    n_jobs=-1,
-):
+def evaluer_transformations_stacking(transformations, modeles_dict, data, sample_weights_train=None,
+                                     cv=5, n_jobs=-1, ):
     X_train = data["X_train"]
     y_train = data["y_train"]
     X_test = data["X_test"]
@@ -1129,8 +1011,8 @@ def evaluer_transformations_stacking(
     predictions_test = {}
 
     for label, transfo in transformations.items():
-        print(f"\n--- {label} (Stacking OOF) ---")
-        print(f"  {transfo['description'][:80]}...")
+        print(f"\n{label} (Stacking OOF)")
+        print(f"  {transfo['description'][:80]}")
 
         try:
             y_tr_t = transfo["transform"](y_train)
@@ -1145,23 +1027,10 @@ def evaluer_transformations_stacking(
 
                 # Rétrocompatibilité automatique entre fit_params et params
                 try:
-                    oof_t = cross_val_predict(
-                        modele,
-                        X_train,
-                        y_tr_t,
-                        cv=cv,
-                        n_jobs=n_jobs,
-                        fit_params=fit_kwargs,
-                    )
+                    oof_t = cross_val_predict(modele, X_train, y_tr_t, cv=cv, n_jobs=n_jobs,
+                                              fit_params=fit_kwargs, )
                 except TypeError:
-                    oof_t = cross_val_predict(
-                        modele,
-                        X_train,
-                        y_tr_t,
-                        cv=cv,
-                        n_jobs=n_jobs,
-                        params=fit_kwargs,
-                    )
+                    oof_t = cross_val_predict(modele, X_train, y_tr_t, cv=cv, n_jobs=n_jobs, params=fit_kwargs)
 
                 oof_preds_dict[nom_m] = oof_t
 
@@ -1186,10 +1055,8 @@ def evaluer_transformations_stacking(
             resultats.append(res)
             predictions_test[label] = preds_eur
 
-            print(
-                f"  → MAPE: {res['MAPE']:.2%} | R²: {res['R²']:.4f} | "
-                f"MAE: {res['MAE']:>10,.0f}€ | RMSE_log: {res['RMSE_log']:.4f}"
-            )
+            print( f"  MAPE: {res['MAPE']:.2%} | R²: {res['R²']:.4f} | "
+                f"MAE: {res['MAE']:>10,.0f}€ | RMSE_log: {res['RMSE_log']:.4f}" )
 
         except Exception as e:
             print(f"  Erreur lors de l'évaluation de {label} : {e}")
@@ -1218,8 +1085,8 @@ def afficher_synthese_transformations(resultats):
 
     df_res_sorted = df_res.sort_values("MAPE")
 
-    # --- 1. AFFICHAGE DU TABLEAU FORMATÉ ---
-    print("=== CLASSEMENT PAR MAPE (↓ meilleur) ===")
+    # Affichage du tableau
+    print("Classement par MAPE décroissant")
     df_display = df_res_sorted.copy()
     df_display["MAE"] = df_display["MAE"].apply(lambda x: f"{x:>12,.0f} €")
     df_display["RMSE"] = df_display["RMSE"].apply(lambda x: f"{x:>12,.0f} €")
@@ -1228,7 +1095,7 @@ def afficher_synthese_transformations(resultats):
     df_display["RMSE_log"] = df_display["RMSE_log"].apply(lambda x: f"{x:.4f}")
     print(df_display.to_string())
 
-    # --- 2. GRAPHIQUES BARPLOT ---
+    # Graphiques
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     colors = [
         "indianred" if "baseline" in str(label).lower() else "steelblue"
@@ -1236,9 +1103,7 @@ def afficher_synthese_transformations(resultats):
     ]
 
     # Barplot MAPE
-    df_res_sorted["MAPE"].plot(
-        kind="bar", ax=axes[0], color=colors, edgecolor="none"
-    )
+    df_res_sorted["MAPE"].plot( kind="bar", ax=axes[0], color=colors, edgecolor="none" )
     axes[0].set_title("MAPE — Test (↓ meilleur)")
     axes[0].yaxis.set_major_formatter(
         plt.FuncFormatter(lambda x, _: f"{x:.0%}")
@@ -1246,36 +1111,24 @@ def afficher_synthese_transformations(resultats):
     axes[0].tick_params(axis="x", rotation=35)
 
     # Barplot R²
-    df_res_sorted["R²"].plot(
-        kind="bar", ax=axes[1], color=colors, edgecolor="none"
-    )
+    df_res_sorted["R²"].plot( kind="bar", ax=axes[1], color=colors, edgecolor="none" )
     axes[1].set_title("R² — Test (↑ meilleur)")
     axes[1].tick_params(axis="x", rotation=35)
 
     # Barplot RMSE_log
-    df_res_sorted["RMSE_log"].plot(
-        kind="bar", ax=axes[2], color=colors, edgecolor="none"
-    )
+    df_res_sorted["RMSE_log"].plot( kind="bar", ax=axes[2], color=colors, edgecolor="none" )
     axes[2].set_title("RMSE log — Test (↓ meilleur)")
     axes[2].tick_params(axis="x", rotation=35)
 
-    plt.suptitle(
-        "Impact de la transformation de la cible sur les performances",
-        fontsize=13,
-    )
+    plt.suptitle( "Impact de la transformation de la cible sur les performances", fontsize=13, )
     plt.tight_layout()
     plt.show()
 
     return df_res_sorted
 
 
-def analyser_mape_par_tranches(
-    predictions_test,
-    y_test,
-    tranches=None,
-    labels_tranches=None,
-    figsize_per_plot=(12, 3.5),
-):
+def analyser_mape_par_tranches(predictions_test, y_test, tranches=None, labels_tranches=None,
+                               figsize_per_plot=(12, 3.5), ):
     """Calcule et affiche le MAPE par tranche de montant pour différentes prédictions,
 
     et génère un barplot pour chaque transformation.
@@ -1288,18 +1141,16 @@ def analyser_mape_par_tranches(
     y_test_vals = y_test.values if hasattr(y_test, "values") else y_test
     n_preds = len(predictions_test)
 
-    # --- 1. AFFICHAGE DU CONSOLE LOG ---
+    # Affichage
     header_tranches = " ".join([f"{lbl:>8}" for lbl in labels_tranches])
-    print("=== MAPE PAR TRANCHE SELON LA TRANSFORMATION ===")
+    print("MAPE par tranche selon la transformation")
     print(f"{'Transformation':30s} {header_tranches}")
-    print("-" * (31 + 9 * len(labels_tranches)))
+    print()
 
     resultats_tranches = []
 
     # Graphiques
-    fig, axes = plt.subplots(
-        n_preds, 1, figsize=(figsize_per_plot[0], figsize_per_plot[1] * n_preds)
-    )
+    fig, axes = plt.subplots( n_preds, 1, figsize=(figsize_per_plot[0], figsize_per_plot[1] * n_preds) )
     if n_preds == 1:
         axes = [axes]
 
@@ -1339,15 +1190,8 @@ def analyser_mape_par_tranches(
     return pd.DataFrame(resultats_tranches).set_index("Transformation")
 
 
-def preparer_meilleure_transformation(
-    df_res,
-    transformations,
-    y_train,
-    y_val,
-    y_test,
-    metric="MAPE",
-    ascending=True,
-):
+def preparer_meilleure_transformation(df_res, transformations, y_train, y_val, y_test, metric="MAPE",
+                                      ascending=True):
     """Identifie la meilleure transformation selon une métrique donnée et prépare
 
     les séries cibles (y_train, y_val, y_test) transformées.
@@ -1387,7 +1231,7 @@ def preparer_meilleure_transformation(
         meilleure_transfo = df_res_idx[metric].idxmax()
 
     # Affichage des métriques clés
-    print(f"=== SÉLECTION DE LA MEILLEURE TRANSFORMATION ({metric}) ===")
+    print(f"Sélection de la meilleure transformation ({metric})")
     print(f"Meilleure transformation : {meilleure_transfo}")
     print(f"MAPE : {df_res_idx.loc[meilleure_transfo, 'MAPE']:.2%}")
     print(f"R²   : {df_res_idx.loc[meilleure_transfo, 'R²']:.4f}")
@@ -1396,19 +1240,12 @@ def preparer_meilleure_transformation(
 
     # Application de la transformation
     transfo_best = transformations[meilleure_transfo]
-    y_tr_best = pd.Series(
-        transfo_best["transform"](y_train), index=y_train.index
-    )
-    y_val_best = pd.Series(
-        transfo_best["transform"](y_val), index=y_val.index
-    )
+    y_tr_best = pd.Series( transfo_best["transform"](y_train), index=y_train.index )
+    y_val_best = pd.Series( transfo_best["transform"](y_val), index=y_val.index )
     y_te_best = pd.Series(transfo_best["transform"](y_test), index=y_test.index)
 
-    print(
-        f"\nDistribution de la cible transformée Train ({meilleure_transfo}) :"
-    )
+    print( f"\nDistribution de la cible transformée Train ({meilleure_transfo}) :" )
     print(y_tr_best.describe())
-    print(f"Skewness : {y_tr_best.skew():.3f}\n")
 
     return {
         "nom": meilleure_transfo,
@@ -1419,24 +1256,8 @@ def preparer_meilleure_transformation(
     }
 
 
-import numpy as np
-import pandas as pd
-from sklearn.base import clone
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_percentage_error
-from sklearn.model_selection import cross_val_predict
-
-
-def entrainer_et_evaluer_stacking_tuned(
-    modeles_dict,
-    transfo_dict,
-    meilleure_transfo_label,
-    data,
-    sample_weights_train=None,
-    cv=5,
-    n_jobs=-1,
-    evaluer_fn=None,
-):
+def entrainer_et_evaluer_stacking_tuned(modeles_dict, transfo_dict, meilleure_transfo_label, data,
+                                        sample_weights_train=None, cv=5, n_jobs=-1, evaluer_fn=None, ):
     """Génère les prédictions OOF, ré-entraîne les modèles de base tunés,
 
     ajuste le méta-modèle LinearRegression et évalue le pipeline complet.
@@ -1459,31 +1280,17 @@ def entrainer_et_evaluer_stacking_tuned(
     y_tr_best = transfo["transform"](y_train)
     y_val_best = transfo["transform"](y_val)
 
-    # 1. Génération des prédictions OOF
-    print("Génération OOF...")
+    # Génération des prédictions OOF
+    print("Génération OOF")
     oof = {}
     fit_kwargs = {"sample_weight": sw} if sw is not None else {}
 
     for nom, m in modeles_dict.items():
         m_clone = clone(m)
         try:
-            oof_t = cross_val_predict(
-                m_clone,
-                X_train,
-                y_tr_best,
-                cv=cv,
-                n_jobs=n_jobs,
-                fit_params=fit_kwargs,
-            )
+            oof_t = cross_val_predict(m_clone, X_train, y_tr_best, cv=cv, n_jobs=n_jobs, fit_params=fit_kwargs)
         except TypeError:
-            oof_t = cross_val_predict(
-                m_clone,
-                X_train,
-                y_tr_best,
-                cv=cv,
-                n_jobs=n_jobs,
-                params=fit_kwargs,
-            )
+            oof_t = cross_val_predict(m_clone, X_train, y_tr_best, cv=cv, n_jobs=n_jobs, params=fit_kwargs)
 
         oof[nom] = oof_t
         preds_eur_oof = fn_inv(oof_t)
@@ -1492,7 +1299,7 @@ def entrainer_et_evaluer_stacking_tuned(
 
     X_meta_tr = pd.DataFrame(oof)
 
-    # 2. Ré-entraînement complet des modèles de base
+    # Ré-entraînement complet des modèles de base
     modeles_fit = {}
     preds_val_dict = {}
     preds_test_dict = {}
@@ -1519,16 +1326,14 @@ def entrainer_et_evaluer_stacking_tuned(
     X_meta_val = pd.DataFrame(preds_val_dict)
     X_meta_te = pd.DataFrame(preds_test_dict)
 
-    # 3. Méta-modèle LinearRegression (poids positifs)
+    # Méta-modèle de régression linéaire
     meta = LinearRegression(positive=True)
     meta.fit(X_meta_tr, y_tr_best)
 
-    poids = {
-        nom: round(w, 3) for nom, w in zip(modeles_dict.keys(), meta.coef_)
-    }
-    print(f"Poids méta : {poids}")
+    poids = { nom: round(w, 3) for nom, w in zip(modeles_dict.keys(), meta.coef_) }
+    print(f"Poids : {poids}")
 
-    # 4. Prédictions finales et évaluation
+    # Prédictions finales et évaluation
     preds_test_stack_t = meta.predict(X_meta_te)
     pred_test_tuned_eur = fn_inv(
         preds_test_stack_t
@@ -1548,7 +1353,7 @@ def entrainer_et_evaluer_stacking_tuned(
             "MAE": np.mean(np.abs(y_test_vals - pred_test_tuned_eur)),
         }
 
-    print(f"\n=== RÉSULTAT FINAL ({label_res}) ===")
+    print(f"\nRésultat final ({label_res})")
     print(f"  MAPE     : {res_tuned['MAPE']:.2%}")
     if "R²" in res_tuned:
         print(f"  R²       : {res_tuned['R²']:.4f}")
@@ -1565,12 +1370,8 @@ def entrainer_et_evaluer_stacking_tuned(
     }
 
 
-import pandas as pd
 
-
-def afficher_classement_final(
-    resultats, reference=None, sort_by="MAPE", ascending=True
-):
+def afficher_classement_final(resultats, reference=None, sort_by="MAPE", ascending=True):
     """Génère et affiche le classement final des modèles/transformations.
 
     Parameters:
@@ -1589,7 +1390,7 @@ def afficher_classement_final(
     pd.DataFrame:
         DataFrame bruts filtrés et triés (non formatés en chaîne) pour réutilisation.
     """
-    # 1. Normalisation des données en DataFrame
+    # Normalisation des données en DataFrame
     if isinstance(resultats, list):
         data_list = list(resultats)
     elif isinstance(resultats, pd.DataFrame):
@@ -1607,10 +1408,10 @@ def afficher_classement_final(
     if "Transformation" in df_final.columns:
         df_final = df_final.set_index("Transformation")
 
-    # 2. Tri du DataFrame
+    # Tri du DataFrame
     df_sorted = df_final.sort_values(by=sort_by, ascending=ascending)
 
-    # 3. Formatage à l'affichage (sur une copie pour préserver les valeurs numériques brutes)
+    # Formatage à l'affichage (sur une copie pour préserver les valeurs numériques brutes)
     df_display = df_sorted.copy()
 
     for col in df_display.columns:
@@ -1631,7 +1432,823 @@ def afficher_classement_final(
         c for c in ["MAPE", "R²", "MAE", "RMSE_log"] if c in df_display.columns
     ]
 
-    print("=== CLASSEMENT FINAL ===")
+    print("Classement final")
     print(df_display[cols_to_show].to_string())
 
     return df_sorted
+
+
+def entrainer_stack(xgb, lgbm, cat, X_tr, y_tr_log, X_val_, y_val_log_, X_te, y_val, w=None):
+    """Entraîne XGB+LGBM+CAT + stacking OOF. Renvoie preds_val, preds_test."""
+
+    modeles = {"XGBoost": xgb, "LightGBM": lgbm, "CatBoost": cat}
+    kw = {"sample_weight": w} if w is not None else {}
+
+    # OOF
+    oof = {}
+    for nom, m in modeles.items():
+        oof[nom] = cross_val_predict(m, X_tr, y_tr_log, cv=5, n_jobs=-1)
+
+    # Ré-entraînement
+    for nom, m in modeles.items():
+        if isinstance(m, CatBoostRegressor):
+            m.fit(X_tr, y_tr_log, eval_set=(X_val_, y_val_log_), verbose=False, **kw)
+        else:
+            m.fit(X_tr, y_tr_log, **kw)
+
+    X_meta_tr  = pd.DataFrame(oof)
+    X_meta_val = pd.DataFrame({n: m.predict(X_val_) for n,m in modeles.items()})
+    X_meta_te  = pd.DataFrame({n: m.predict(X_te)  for n,m in modeles.items()})
+
+    meta = LinearRegression(positive=True)
+    meta.fit(X_meta_tr, y_tr_log)
+
+    return (np.expm1(meta.predict(X_meta_val)),
+            np.expm1(meta.predict(X_meta_te)),
+            modeles)
+
+
+def preprocess_and_evaluate_pca( X_train, X_val, X_test, n_top_bars=30, random_state=42 ):
+    """Impute les NaN à la médiane, standardise les données, applique une ACP
+
+    et affiche les graphiques de variance expliquée.
+    """
+    # Imputation
+    imputer = SimpleImputer(strategy="median")
+    X_train_imp = pd.DataFrame(
+        imputer.fit_transform(X_train),
+        columns=X_train.columns,
+        index=X_train.index,
+    )
+    X_val_imp = pd.DataFrame( imputer.transform(X_val), columns=X_val.columns, index=X_val.index )
+    X_test_imp = pd.DataFrame( imputer.transform(X_test), columns=X_test.columns, index=X_test.index )
+
+    print(
+        f"NaN restants — train: {X_train_imp.isnull().sum().sum()} | "
+        f"val: {X_val_imp.isnull().sum().sum()} | "
+        f"test: {X_test_imp.isnull().sum().sum()}"
+    )
+
+    # Standardisation
+    scaler_acp = StandardScaler()
+    X_train_scaled = scaler_acp.fit_transform(X_train_imp)
+    X_val_scaled = scaler_acp.transform(X_val_imp)
+    X_test_scaled = scaler_acp.transform(X_test_imp)
+
+    # ACP
+    pca_full = PCA(random_state=random_state)
+    pca_full.fit(X_train_scaled)
+
+    variance_cumul = np.cumsum(pca_full.explained_variance_ratio_)
+    n_95 = np.argmax(variance_cumul >= 0.95) + 1
+    n_99 = np.argmax(variance_cumul >= 0.99) + 1
+    n_999 = np.argmax(variance_cumul >= 0.999) + 1
+
+    print(f"Dimensions originales : {X_train.shape[1]} features")
+    print(f"Composantes pour 95%  de variance : {n_95}")
+    print(f"Composantes pour 99%  de variance : {n_99}")
+    print(f"Composantes pour 99.9% de variance : {n_999}")
+
+    # Visualisation
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4))
+
+    # Variance cumulée
+    axes[0].plot(variance_cumul, lw=2, color="steelblue")
+    thresholds = [
+        (0.95, n_95, "red"),
+        (0.99, n_99, "orange"),
+        (0.999, n_999, "green"),
+    ]
+    for thresh, n, color in thresholds:
+        axes[0].axhline(
+            thresh,
+            linestyle="--",
+            color=color,
+            alpha=0.7,
+            label=f"{thresh:.1%} → {n} composantes",
+        )
+        axes[0].axvline(n - 1, linestyle="--", color=color, alpha=0.5)
+
+    axes[0].set_xlabel("Nombre de composantes")
+    axes[0].set_ylabel("Variance expliquée cumulée")
+    axes[0].set_title("Variance expliquée — ACP")
+    axes[0].legend(fontsize=8)
+    axes[0].grid(True, alpha=0.3)
+
+    # Variance par composante
+    top_n = min(n_top_bars, len(pca_full.explained_variance_ratio_))
+    axes[1].bar(
+        range(top_n),
+        pca_full.explained_variance_ratio_[:top_n] * 100,
+        color="steelblue",
+        edgecolor="none",
+    )
+    axes[1].set_xlabel("Composante")
+    axes[1].set_ylabel("% variance expliquée")
+    axes[1].set_title(f"Variance par composante (top {top_n})")
+
+    plt.tight_layout()
+    plt.show()
+
+    # Dictionnaire de retour des objets transformés
+    return {
+        "X_train_scaled": X_train_scaled,
+        "X_val_scaled": X_val_scaled,
+        "X_test_scaled": X_test_scaled,
+        "imputer": imputer,
+        "scaler": scaler_acp,
+        "pca": pca_full,
+        "n_components": {"95%": n_95, "99%": n_99, "99.9%": n_999},
+    }
+
+
+def evaluer_acp_seuils(X_train_scaled, X_val_scaled, X_test_scaled, y_train_log, y_val_log,
+                       y_val, y_test, sample_weights_train, modeles_base, res_pca,
+                       seuils=[0.95, 0.99, 0.999], random_state=42):
+    """Teste plusieurs seuils de variance expliquée pour l'ACP, entraîne la fonction stack
+
+    et retourne les résultats d'évaluation.
+    """
+    xgb, lgbm, cat = modeles_base
+    n_components_dict = res_pca["n_components"]
+
+    # Association dynamique des seuils avec leur nombre de composantes
+    map_seuils = {0.95: "95%", 0.99: "99%", 0.999: "99.9%"}
+
+    resultats = []
+
+    # Conversion préalable des cibles et poids en arrays pour éviter les problèmes d'index
+    y_train_log_arr = ( y_train_log.values if hasattr(y_train_log, "values") else y_train_log )
+    y_val_log_series = (
+        pd.Series(y_val_log.values)
+        if hasattr(y_val_log, "values")
+        else pd.Series(y_val_log)
+    )
+    y_test_arr = y_test.values if hasattr(y_test, "values") else y_test
+    weights_arr = (
+        sample_weights_train.values
+        if hasattr(sample_weights_train, "values")
+        else sample_weights_train
+    )
+
+    for seuil in seuils:
+        key = map_seuils.get(seuil, f"{seuil:.1%}")
+        n_comp = n_components_dict[key]
+        label_acp = f"ACP {seuil:.1%}"
+
+        print(f"\n{label_acp} ({n_comp} composantes)")
+
+        # Application de l'ACP
+        pca = PCA(n_components=n_comp, random_state=random_state)
+        Xtr_pca = pca.fit_transform(X_train_scaled)
+        Xval_pca = pca.transform(X_val_scaled)
+        Xte_pca = pca.transform(X_test_scaled)
+
+        # Conversion en DataFrames
+        cols = [f"PC{i+1}" for i in range(n_comp)]
+        Xtr_pca = pd.DataFrame(Xtr_pca, columns=cols)
+        Xval_pca = pd.DataFrame(Xval_pca, columns=cols)
+        Xte_pca = pd.DataFrame(Xte_pca, columns=cols)
+
+        # Entraînement et prédictions
+        pred_val_acp, pred_te_acp, _ = entrainer_stack(xgb, lgbm, cat, Xtr_pca, y_train_log_arr,
+                                                       Xval_pca, y_val_log_series, Xte_pca, y_val,
+                                                       w=weights_arr)
+        # Évaluation
+        res = evaluer_complet(label_acp, y_test_arr, pred_te_acp)
+        print(
+            f"  MAPE : {res['MAPE']:.2%} | R² : {res['R²']:.4f} | RMSE_log : {res['RMSE_log']:.4f}"
+        )
+
+        resultats.append(res)
+
+    return resultats
+
+
+
+def calculer_importances_xgboost(selector_model, X_train, y_train_log, sample_weights_train=None,
+                                 top_n_plot=30, random_state=42, ):
+    """Entraîne un modèle XGBoost rapide pour extraire et visualiser l'importance des features (gain).
+
+    Returns:
+        pd.Series: Les importances triées par ordre décroissant.
+    """
+    # Entraînement du modèle XGBoost rapide
+    
+    selector_model.fit( X_train, y_train_log, sample_weight=sample_weights_train )
+
+    # Extraction et tri des importances
+    importances = pd.Series( selector_model.feature_importances_, index=X_train.columns )
+    importances = importances.sort_values(ascending=False)
+
+    # Affichage des statistiques
+    print(f"Features total : {len(importances)}")
+    print(f"Features avec importance > 0     : {(importances > 0).sum()}")
+    print( f"Features avec importance > 0.01 (1%) : {(importances > 0.01).sum()}" )
+    print( f"Features avec importance > 0.005 (0.5%) : {(importances > 0.005).sum()}" )
+    print("\nTop 20 features :")
+    print(importances.head(20).to_string())
+
+    # Graphique du top N
+    fig, ax = plt.subplots(figsize=(8, 8))
+    top_n = min(top_n_plot, len(importances))
+    importances.head(top_n).sort_values().plot( kind="barh", ax=ax, color="teal", edgecolor="none" )
+    ax.set_title(f"Top {top_n} features — importance XGBoost (gain)")
+    ax.set_xlabel("Importance (gain)")
+    plt.tight_layout()
+    plt.show()
+
+    return importances
+
+
+def calculer_permutation_importance(model, X_val, y_val_log, feature_names, importances_gain=None, n_repeats=10,
+                                    scoring="neg_mean_squared_error", top_n_plot=30, random_state=42):
+    """Calcule la permutation importance sur le jeu de validation
+
+    et affiche une comparaison avec la gain importance (si fournie).
+
+    Returns:
+        tuple: (perm_imp, perm_std) contenant les Series Pandas des importances
+        et écarts-types.
+    """
+    print("Calcul permutation importance (peut prendre 2-3 minutes)...")
+
+    perm_result = permutation_importance(model, X_val, y_val_log, n_repeats=n_repeats,
+                                         random_state=random_state, scoring=scoring, n_jobs=-1, )
+
+    # Structuration des résultats
+    perm_imp = pd.Series(perm_result.importances_mean, index=feature_names)
+    perm_std = pd.Series(perm_result.importances_std, index=feature_names)
+    perm_imp = perm_imp.sort_values(ascending=False)
+
+    print(f"\nFeatures avec permutation importance > 0   : {(perm_imp > 0).sum()}")
+    print( f"Features avec permutation importance < 0   : {(perm_imp < 0).sum()}" )
+    print(f"\nTop {min(top_n_plot, len(perm_imp))} permutation importance :")
+    print(perm_imp.head(top_n_plot).to_string())
+
+    top_n = min(top_n_plot, len(perm_imp))
+
+    # Graphique unique si l'importance par gain n'est pas transmise
+    if importances_gain is None:
+        fig, ax = plt.subplots(figsize=(8, 8))
+        perm_imp.head(top_n).sort_values().plot( kind="barh", ax=ax, color="steelblue", edgecolor="none" )
+        ax.set_title( f"Top {top_n} — Permutation Importance (Validation)", fontsize=12 )
+        ax.set_xlabel("Importance moyenne (dégradation score)")
+    else:
+        # Comparaison côte-à-côte
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+
+        perm_imp.head(top_n).sort_values().plot( kind="barh", ax=axes[0], color="steelblue", edgecolor="none" )
+        axes[0].set_title(f"Top {top_n} — Permutation Importance (non biaisée)")
+        axes[0].set_xlabel("Importance moyenne (dégradation MSE log)")
+
+        importances_gain.head(top_n).sort_values().plot( kind="barh", ax=axes[1], color="teal", edgecolor="none" )
+        axes[1].set_title( f"Top {top_n} — Importance par gain (XGBoost, biaisée)" )
+        axes[1].set_xlabel("Importance (gain)")
+
+        plt.suptitle( "Comparaison : Permutation vs Gain Importance", fontsize=13, y=1.01 )
+
+    plt.tight_layout()
+    plt.show()
+
+    return perm_imp, perm_std
+
+
+def comparer_permutation_vs_gain_importance(selector_model, X_val, y_val_log, importances_gain,
+                                            top_n=30, n_repeats=10, random_state=None,
+                                            scoring="neg_mean_squared_error", n_jobs=-1, figsize=(16, 8), ):
+    print("Calcul permutation importance (peut prendre 2-3 minutes)...")
+
+    perm_result = permutation_importance(selector_model, X_val, y_val_log, n_repeats=n_repeats,
+                                         random_state=random_state, scoring=scoring, n_jobs=n_jobs, )
+
+    perm_imp = pd.Series(perm_result.importances_mean, index=X_val.columns)
+    perm_std = pd.Series(perm_result.importances_std, index=X_val.columns)
+    perm_imp = perm_imp.sort_values(ascending=False)
+
+    print(f"\nFeatures avec permutation importance > 0   : {(perm_imp > 0).sum()}")
+    print(f"Features avec permutation importance < 0   : {(perm_imp < 0).sum()} (mélanger améliore → bruit)")
+    print(f"\nTop {top_n} permutation importance :")
+    print(perm_imp.head(top_n).to_string())
+
+    # Comparaison gain vs permutation importance
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    perm_imp.head(top_n).sort_values().plot( kind="barh", ax=axes[0], color="steelblue", edgecolor="none" )
+    axes[0].set_title(f"Top {top_n} — Permutation Importance (non biaisée)")
+    axes[0].set_xlabel("Importance moyenne (dégradation MSE log)")
+
+    importances_gain.head(top_n).sort_values().plot( kind="barh", ax=axes[1], color="teal", edgecolor="none" )
+    axes[1].set_title(f"Top {top_n} — Importance par gain (biaisée)")
+    axes[1].set_xlabel("Importance (gain)")
+
+    plt.suptitle("Comparaison : Permutation vs Gain Importance", fontsize=13, y=1.01)
+    plt.tight_layout()
+    plt.show()
+
+    return perm_imp, perm_std
+
+
+def evaluer_selection_permutation(perm_imp, X_train, y_train_log, X_val, y_val_log, X_test, y_val,
+                                  y_test, sample_weights_train, modeles_base,
+                                  seuils_perm=[(0, "Perm > 0  (toutes utiles)"),
+                                               (0.001, "Perm > 0.001"),
+                                               (0.005, "Perm > 0.005"), ],
+                                  min_features=5, ):
+    """Filtre les features selon différents seuils de permutation importance,
+
+    réentraîne la stack sur ces sous-ensembles et évalue les performances.
+
+    Returns:
+        tuple: (resultats, dictionnaire_features_selectionnees)
+    """
+    xgb, lgbm, cat = modeles_base
+    resultats = []
+    features_selectionnees = {}
+
+    # Conversion sécurisée en numpy arrays / pandas objects si besoin
+    weights_arr = (
+        sample_weights_train.values
+        if hasattr(sample_weights_train, "values")
+        else sample_weights_train
+    )
+
+    for seuil_perm, label_perm in seuils_perm:
+        # Filtrage des variables dont l'importance dépasse le seuil
+        features_perm = perm_imp[perm_imp > seuil_perm].index.tolist()
+
+        # Vérification du nombre minimal de variables retenues
+        if len(features_perm) < min_features:
+            print( f"Trop peu de features ({len(features_perm)}) pour le seuil {seuil_perm}, étape ignorée." )
+            continue
+
+        print(f"\n{label_perm} ({len(features_perm)} features)")
+        features_selectionnees[label_perm] = features_perm
+
+        # Entraînement de la stack sur les variables filtrées
+        pred_val_perm, pred_te_perm, _ = entrainer_stack(xgb, lgbm, cat, X_train[features_perm],
+                                                         y_train_log, X_val[features_perm],
+                                                         y_val_log, X_test[features_perm], y_val,
+                                                         w=weights_arr)
+
+        # Évaluation
+        res = evaluer_complet(label_perm, y_test, pred_te_perm)
+        print( f"  MAPE : {res['MAPE']:.2%} | R² : {res['R²']:.4f} | RMSE_log : {res['RMSE_log']:.4f}" )
+
+        resultats.append(res)
+
+    return resultats, features_selectionnees
+
+
+def afficher_comparaison_finale(resultats_comparaison, label_baseline="Sans"):
+    """Formate et affiche le tableau récapitulatif des performances
+
+    ainsi que les graphiques comparatifs (MAPE, R², RMSE log).
+
+    Gère automatiquement la clé 'Transformation' ou 'Label'.
+    """
+    # Création du DataFrame brut
+    df_raw = pd.DataFrame(resultats_comparaison)
+
+    # Solution 2 : Renommage automatique de 'Transformation' vers 'Label'
+    if "Transformation" in df_raw.columns and "Label" not in df_raw.columns:
+        df_raw = df_raw.rename(columns={"Transformation": "Label"})
+
+    if "Label" not in df_raw.columns:
+        raise KeyError(
+            "Aucune colonne 'Label' ou 'Transformation' trouvée dans resultats_comparaison."
+        )
+
+    # Mise en forme du tableau d'affichage
+    df_display = df_raw.copy().set_index("Label")
+
+    for col, fmt in [
+        ("MAE", "{:>=12,.0f} €"),
+        ("RMSE", "{:>=12,.0f} €"),
+        ("MAPE", "{:.2%}"),
+        ("R²", "{:.4f}"),
+        ("RMSE_log", "{:.4f}"),
+    ]:
+        if col in df_display.columns:
+            df_display[col] = df_display[col].apply(lambda x: fmt.format(x) if isinstance(x, (int, float)) 
+                                                    else str(x) )
+
+    print("Comparaison finale sur le test")
+    print(df_display.to_string())
+
+    # Visualisation
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5))
+
+    # Recherche de la ligne baseline
+    df_base_rows = df_raw[ df_raw["Label"].str.contains(label_baseline, case=False, na=False) ]
+    has_baseline = not df_base_rows.empty
+
+    colors = [
+        "indianred" if label_baseline.lower() in str(l).lower() else "steelblue"
+        for l in df_raw["Label"]
+    ]
+
+    # Graphique MAPE
+    df_raw.set_index("Label")["MAPE"].plot( kind="bar", ax=axes[0], color=colors, edgecolor="none" )
+    axes[0].set_title("MAPE (↓ meilleur)")
+    axes[0].yaxis.set_major_formatter( plt.FuncFormatter(lambda x, _: f"{x:.0%}") )
+    axes[0].tick_params(axis="x", rotation=30)
+    if has_baseline:
+        axes[0].axhline(
+            df_base_rows["MAPE"].values[0],
+            color="red",
+            lw=1.5,
+            linestyle="--",
+            label="baseline",
+        )
+
+    # Graphique R²
+    df_raw.set_index("Label")["R²"].plot( kind="bar", ax=axes[1], color=colors, edgecolor="none" )
+    axes[1].set_title("R² (↑ meilleur)")
+    axes[1].tick_params(axis="x", rotation=30)
+    if has_baseline:
+        axes[1].axhline( df_base_rows["R²"].values[0], color="red", lw=1.5, linestyle="--" )
+
+    # Graphique RMSE_log
+    df_raw.set_index("Label")["RMSE_log"].plot(
+        kind="bar", ax=axes[2], color=colors, edgecolor="none"
+    )
+    axes[2].set_title("RMSE log (↓ meilleur)")
+    axes[2].tick_params(axis="x", rotation=30)
+    if has_baseline:
+        axes[2].axhline( df_base_rows["RMSE_log"].values[0], color="red", lw=1.5, linestyle="--", )
+
+    plt.suptitle( "Réduction de dimensionnalité — Impact sur les performances", fontsize=13, )
+    plt.tight_layout()
+    plt.show()
+
+    return df_display
+
+
+def separer_gardiens_et_champ(X_train, y_train, X_val, y_val, X_test, y_test, col_gk="pos_GK",
+                              cols_a_supprimer=["pos_DF", "pos_FW", "pos_GK", "pos_MF"], ):
+    """Sépare les jeux de données (train/val/test) entre gardiens (GK) et joueurs de champ,
+
+    puis retire les colonnes spécifiées (ex: indicateurs de poste).
+
+    Returns:
+        dict: Contient tous les sous-ensembles X et y séparés.
+    """
+    # Masques boléens
+    mask_train_gk = X_train[col_gk] == 1
+    mask_val_gk = X_val[col_gk] == 1
+    mask_test_gk = X_test[col_gk] == 1
+
+    # Séparation Gardiens
+    X_train_gk, y_train_gk = X_train[mask_train_gk], y_train[mask_train_gk]
+    X_val_gk, y_val_gk = X_val[mask_val_gk], y_val[mask_val_gk]
+    X_test_gk, y_test_gk = X_test[mask_test_gk], y_test[mask_test_gk]
+
+    # Séparation Joueurs de champ
+    X_train_champ, y_train_champ = ( X_train[~mask_train_gk], y_train[~mask_train_gk], )
+    X_val_champ, y_val_champ = X_val[~mask_val_gk], y_val[~mask_val_gk]
+    X_test_champ, y_test_champ = X_test[~mask_test_gk], y_test[~mask_test_gk]
+
+    # Affichage des effectifs
+    print( f"Gardiens         : {len(X_train_gk):>5} train | {len(X_val_gk):>4} val | {len(X_test_gk):>4} test" )
+    print( f"Joueurs de champ : {len(X_train_champ):>5} train | {len(X_val_champ):>4} val | {len(X_test_champ):>4} test" )
+
+    # Suppression des colonnes de position
+    cols_existant_train = [
+        c for c in cols_a_supprimer if c in X_train.columns
+    ]
+
+    X_train_gk_feat = X_train_gk.drop(columns=cols_existant_train)
+    X_val_gk_feat = X_val_gk.drop(columns=cols_existant_train)
+    X_test_gk_feat = X_test_gk.drop(columns=cols_existant_train)
+
+    X_train_champ_feat = X_train_champ.drop(columns=cols_existant_train)
+    X_val_champ_feat = X_val_champ.drop(columns=cols_existant_train)
+    X_test_champ_feat = X_test_champ.drop(columns=cols_existant_train)
+
+    # Dictionnaire de retour
+    return {
+        "gk": { "X_train": X_train_gk_feat, "y_train": y_train_gk, "X_val": X_val_gk_feat,
+               "y_val": y_val_gk, "X_test": X_test_gk_feat, "y_test": y_test_gk, },
+        "champ": { "X_train": X_train_champ_feat, "y_train": y_train_champ, "X_val": X_val_champ_feat,
+                  "y_val": y_val_champ, "X_test": X_test_champ_feat, "y_test": y_test_champ, },
+    }
+
+
+def espace_forest(trial):
+    return {
+        "n_estimators":      trial.suggest_int("n_estimators", 200, 1000, step=100),
+        "max_depth":         trial.suggest_int("max_depth", 5, 40),
+        "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+        "min_samples_leaf":  trial.suggest_int("min_samples_leaf", 1, 10),
+        "max_features":      trial.suggest_categorical("max_features", ["sqrt", "log2", 0.5, 0.8, 1.0]),
+    }
+
+def espace_xgb(trial):
+    return {
+        "n_estimators":     trial.suggest_int("n_estimators", 300, 3000, step=200),
+        "max_depth":        trial.suggest_int("max_depth", 3, 12),
+        "learning_rate":    trial.suggest_float("learning_rate", 0.005, 0.2, log=True),
+        "subsample":        trial.suggest_float("subsample", 0.5, 1.0),
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        "min_child_weight": trial.suggest_float("min_child_weight", 0.5, 10),
+        "reg_alpha":        trial.suggest_float("reg_alpha", 1e-4, 10, log=True),
+        "reg_lambda":       trial.suggest_float("reg_lambda", 1e-4, 10, log=True),
+    }
+
+def espace_lgbm(trial):
+    return {
+        "n_estimators":     trial.suggest_int("n_estimators", 300, 3000, step=200),
+        "num_leaves":       trial.suggest_int("num_leaves", 15, 255),
+        "max_depth":        trial.suggest_int("max_depth", 3, 15),
+        "learning_rate":    trial.suggest_float("learning_rate", 0.005, 0.2, log=True),
+        "subsample":        trial.suggest_float("subsample", 0.5, 1.0),
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        "reg_alpha":        trial.suggest_float("reg_alpha", 1e-4, 10, log=True),
+        "reg_lambda":       trial.suggest_float("reg_lambda", 1e-4, 10, log=True),
+    }
+
+def tuner_modele(fixed_params, model_class, espace_fn, X_tr, y_tr, X_ev, y_ev, n_trials, random_state):
+    fixed = fixed_params[model_class]
+    def objective(trial):
+        params = {**espace_fn(trial), **fixed}
+        model = model_class(**params)
+        model.fit(X_tr, y_tr)
+        preds = model.predict(X_ev)
+        return np.sqrt(mean_squared_error(y_ev, preds))
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=random_state))
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+    return study
+
+
+def construire_et_entrainer_modeles_groupes( groupes, tuning_par_groupe, modeles_a_tuner, fixed_params ):
+    """Instancie les modèles avec les meilleurs hyperparamètres issus d'Optuna
+
+    et les entraîne sur leurs groupes respectifs.
+
+    Returns:
+        tuple: (modeles_finaux_par_groupe, modeles_groupe_entraines)
+    """
+    modeles_finaux_par_groupe = {}
+    modeles_groupe_entraines = {}
+
+    for nom_groupe, (X_tr, y_tr, *_) in groupes.items():
+        modeles_finaux_par_groupe[nom_groupe] = {}
+        modeles_groupe_entraines[nom_groupe] = {}
+
+        print(f"\nEntraînement groupe : {nom_groupe}")
+
+        for nom_modele, (model_class, _) in modeles_a_tuner.items():
+            # Récupération de l'étude Optuna et instanciation
+            study = tuning_par_groupe[nom_groupe][nom_modele]
+            params_fixes = fixed_params.get(model_class, {})
+
+            modele = model_class(**study.best_params, **params_fixes)
+            modeles_finaux_par_groupe[nom_groupe][nom_modele] = modele
+
+            # Entraînement du modèle
+            modele.fit(X_tr, y_tr)
+            modeles_groupe_entraines[nom_groupe][nom_modele] = modele
+
+            print(f"  {nom_groupe} / {nom_modele} : entraîné")
+
+    return modeles_finaux_par_groupe, modeles_groupe_entraines
+
+
+def comparer_modeles_global_vs_specifique(X_global, modeles_globaux, modeles_specifiques, modeles_a_tuner,
+                                          dict_groupes, split_name="Validation", ):
+    comparaison_groupes = []
+
+    for nom_groupe, (X_group_feat, y_ev) in dict_groupes.items():
+        # Extraction dynamique de X_global pour ce sous-groupe (conserve toutes les colonnes d'origine)
+        X_ev_global = X_global.loc[X_group_feat.index]
+
+        for nom_modele in modeles_a_tuner:
+            # Prédictions du modèle global
+            modele_global = modeles_globaux[nom_modele]
+            preds_global = modele_global.predict(X_ev_global)
+            mae_global = mean_absolute_error(y_ev, preds_global)
+            r2_global = r2_score(y_ev, preds_global)
+
+            # Prédictions du modèle spécifique au groupe
+            modele_groupe = modeles_specifiques[nom_groupe][nom_modele]
+            preds_groupe = modele_groupe.predict(X_group_feat)
+            mae_groupe = mean_absolute_error(y_ev, preds_groupe)
+            r2_groupe = r2_score(y_ev, preds_groupe)
+
+            # Stockage des résultats
+            comparaison_groupes.append(
+                { "Groupe": nom_groupe, "Modèle": nom_modele, "MAE global": mae_global,
+                 "R² global": r2_global, "MAE spécifique": mae_groupe, "R² spécifique": r2_groupe,
+                 "Gain MAE": mae_global - mae_groupe, }
+            )
+
+    df_comparaison = pd.DataFrame(comparaison_groupes)
+
+    print(
+        f"Classement ({split_name}) : modèle global vs modèle spécifique"
+    )
+    print(df_comparaison.to_string(index=False))
+
+    return df_comparaison
+
+
+def get_feature_names(modele):
+    """Récupère la liste des features attendues par un modèle, quel que soit son type."""
+    if hasattr(modele, "get_booster"):
+        try:
+            fn = modele.get_booster().feature_names
+            if fn: return fn
+        except Exception:
+            pass
+    if hasattr(modele, "booster_"):
+        try:
+            return list(modele.booster_.feature_name())
+        except Exception:
+            pass
+    if hasattr(modele, "feature_names_"):
+        return list(modele.feature_names_)
+    if hasattr(modele, "feature_names_in_"):
+        return list(modele.feature_names_in_)
+    return None
+
+
+def aligner_X(X, feature_names, nom_modele=""):
+    """Réaligne les colonnes de X sur celles attendues par le modèle :
+
+    colonnes manquantes -> ajoutées à 0, colonnes en trop -> supprimées.
+    """
+    if feature_names is None:
+        return X
+    manquantes = [c for c in feature_names if c not in X.columns]
+    en_trop    = [c for c in X.columns if c not in feature_names]
+    if manquantes:
+        print(f"    {nom_modele} : {len(manquantes)} colonne(s) manquante(s) "
+              f"réinjectée(s) à 0 : {manquantes[:5]}{'...' if len(manquantes) > 5 else ''}")
+        X = X.copy()
+        for c in manquantes:
+            X[c] = 0
+    if en_trop:
+        X = X.drop(columns=en_trop)
+    return X[feature_names]
+
+
+def predire_aligne(modele, X, nom_modele=""):
+    """Prédit avec `modele` après avoir réaligné X sur les features qu'il attend."""
+    fn = get_feature_names(modele)
+    return modele.predict(aligner_X(X, fn, nom_modele))
+
+
+def construire_tableau_comparatif_final(X_test_final, y_test_final, X_test_sans_nan_final, modeles_tuned,
+                                        modeles_tuned_sans_nan, modeles_tuned_log, modeles_tuned_log_sans_nan,
+                                        base_models_log, meta_modele, meilleure_transfo_label,
+                                        pred_test_tuned_eur, modeles_finaux, base_models_b5, meta_modele_b5):
+    taille_ref = len(y_test_final)
+    print(f"Référence : {taille_ref} lignes (test set Partie A, figé)")
+
+    results = []
+
+    def verif(name, arr):
+        arr = np.array(arr, dtype=float)
+        if len(arr) != taille_ref:
+            print(f"    {name} ignoré : taille {len(arr)} ≠ {taille_ref}")
+            return None
+        return np.clip(arr, 0, None)
+
+    def calcul_metriques(name, y_pred):
+        y_pred = verif(name, y_pred)
+        if y_pred is None:
+            return
+        mae      = mean_absolute_error(y_test_final, y_pred)
+        rmse     = np.sqrt(mean_squared_error(y_test_final, y_pred))
+        mape     = mean_absolute_percentage_error(y_test_final, y_pred)
+        r2       = r2_score(y_test_final, y_pred)
+        rmse_log = np.sqrt(mean_squared_error(np.log1p(y_test_final), np.log1p(y_pred)))
+        n, p     = X_test_final.shape
+        r2_adj   = 1 - (1 - r2) * (n - 1) / (n - p - 1)
+        results.append({"Modèle": name, "MAPE": mape, "RMSE_log": rmse_log,
+                         "R²": r2, "R²_adj": r2_adj, "MAE": mae, "RMSE": rmse, "preds": y_pred})
+
+    # Partie B3
+    preds_test_base_final = {
+        nom: np.expm1(predire_aligne(modeles_tuned_log[nom], X_test_final, nom))
+        for nom in base_models_log
+    }
+    X_meta_test_b3 = pd.DataFrame(preds_test_base_final)
+
+    pred_test_stack_final   = meta_modele.predict(X_meta_test_b3)
+    pred_test_moyenne_final = X_meta_test_b3.mean(axis=1)
+
+    calcul_metriques("Blend Moyenne (B3 — Stacking initial)", pred_test_moyenne_final)
+    calcul_metriques("Stacking OOF (B3 — Stacking initial)",  pred_test_stack_final)
+
+    # Partie B4
+    calcul_metriques(f"Stacking Tuné ({meilleure_transfo_label}) (B4 — Transfo)", pred_test_tuned_eur)
+
+    # Parties B1 et B2
+    modeles_bruts = {
+        "Random Forest (B1)": (modeles_tuned["Random Forest"],       X_test_final,          False),
+        "Extra Trees (B1)":   (modeles_tuned["Extra Trees"],         X_test_final,          False),
+        "XGBoost (B1)":       (modeles_tuned["XGBoost"],             X_test_final,          False),
+        "LightGBM (B1)":      (modeles_tuned["LightGBM"],            X_test_final,          False),
+        "CatBoost (B1)":      (modeles_tuned["CatBoost"],            X_test_final,          False),
+        "SVR (B1)":           (modeles_tuned_sans_nan["SVR"],        X_test_sans_nan_final, False),
+        "ElasticNet (B1)":    (modeles_tuned_sans_nan["ElasticNet"], X_test_sans_nan_final, False),
+    }
+    modeles_log = {
+        "Random Forest log (B2)": (modeles_tuned_log["Random Forest (log)"],       X_test_final,          True),
+        "Extra Trees log (B2)":   (modeles_tuned_log["Extra Trees (log)"],         X_test_final,          True),
+        "XGBoost log (B2)":       (modeles_tuned_log["XGBoost (log)"],             X_test_final,          True),
+        "LightGBM log (B2)":      (modeles_tuned_log["LightGBM (log)"],            X_test_final,          True),
+        "CatBoost log (B2)":      (modeles_tuned_log["CatBoost (log)"],            X_test_final,          True),
+        "SVR log (B2)":           (modeles_tuned_log_sans_nan["SVR (log)"],        X_test_sans_nan_final, True),
+        "ElasticNet log (B2)":    (modeles_tuned_log_sans_nan["ElasticNet (log)"], X_test_sans_nan_final, True),
+    }
+    for name, (modele, X_ev, is_log) in {**modeles_bruts, **modeles_log}.items():
+        y_pred_raw = np.expm1(predire_aligne(modele, X_ev, name)) if is_log else predire_aligne(modele, X_ev, name)
+        calcul_metriques(name, y_pred_raw)
+
+    # Partie B5
+    preds_b5_final = {
+        nom: np.expm1(predire_aligne(modeles_finaux[nom], X_test_final, nom))
+        for nom in base_models_b5
+    }
+    X_meta_test_final  = pd.DataFrame(preds_b5_final)
+    pred_test_b5_final = meta_modele_b5.predict(X_meta_test_final)  # déjà en €, pas de expm1 ici
+    calcul_metriques("Stacking OOF, train sans outliers (B5)", pred_test_b5_final)
+
+    # Partie B6
+    print("B6 (ACP / SFM / Permutation) exclu du tableau : transformeurs non sauvegardés, "
+          "voir note ci-dessus pour les inclure proprement.")
+
+    # Tableau comparatif final
+    df_all         = pd.DataFrame(results).set_index("Modèle").sort_values("MAE")
+    df_recap_final = pd.DataFrame(results).sort_values("MAE").reset_index(drop=True)
+
+    df_disp = df_all.drop(columns=["preds"]).copy()
+    df_disp["MAPE"]     = df_disp["MAPE"].apply(lambda x: f"{x:.2%}")
+    df_disp["RMSE_log"] = df_disp["RMSE_log"].apply(lambda x: f"{x:.4f}")
+    df_disp["R²"]       = df_disp["R²"].apply(lambda x: f"{x:.4f}")
+    df_disp["R²_adj"]   = df_disp["R²_adj"].apply(lambda x: f"{x:.4f}")
+    df_disp["MAE"]      = df_disp["MAE"].apply(lambda x: f"{x:>12,.0f} €")
+    df_disp["RMSE"]     = df_disp["RMSE"].apply(lambda x: f"{x:>12,.0f} €")
+
+    print("CLASSEMENT FINAL — Toutes approches (Test figé Partie A, trié par MAE croissant)")
+    print(df_disp.to_string())
+
+    return df_all, df_recap_final
+
+
+def visualiser_comparaison_finale(df_all):
+    def get_color(lbl):
+        if "B1" in lbl: return "#2196F3"
+        if "B2" in lbl: return "#9C27B0"
+        if "B3" in lbl: return "#FF9800"
+        if "B4" in lbl: return "#4CAF50"
+        if "B5" in lbl: return "#F44336"
+        if "B6" in lbl: return "#00BCD4"
+        return "#9E9E9E"
+
+    fig, axes = plt.subplots(1, 3, figsize=(20, max(6, len(df_all) * 0.4)))
+    for ax, col, title, ascending in [
+        (axes[0], "MAPE",     "MAPE ↓ (meilleur)",      True),
+        (axes[1], "R²",       "R² ↑ (meilleur)",         False),
+        (axes[2], "RMSE_log", "RMSE log ↓ (meilleur)",   True),
+    ]:
+        # Sélection uniquement des 5 premiers modèles pour la métrique courante
+        df_top5 = df_all[col].sort_values(ascending=ascending).head(5)
+        colors_top5 = [get_color(l) for l in df_top5.index]
+
+        df_top5.plot(kind="barh", ax=ax, color=colors_top5, edgecolor="none")
+        ax.set_title(title, fontsize=12, fontweight="bold")
+        ax.invert_yaxis()  # Le #1 se retrouve en haut du graphique
+        ax.tick_params(axis="y", labelsize=9)
+
+        if col == "MAPE":
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
+    legend = [
+        Patch(facecolor="#2196F3", label="B1 — Cible brute"),
+        Patch(facecolor="#9C27B0", label="B2 — Cible log"),
+        Patch(facecolor="#FF9800", label="B3 — Stacking OOF"),
+        Patch(facecolor="#4CAF50", label="B4 — Transfo optimale"),
+        Patch(facecolor="#F44336", label="B5 — Sans outliers"),
+        Patch(facecolor="#00BCD4", label="B6 — Réd. dimensionnalité"),
+    ]
+    fig.legend(handles=legend, loc="lower center", ncol=6, fontsize=9, bbox_to_anchor=(0.5, -0.05))
+    plt.suptitle("Comparaison finale — Toutes approches (Test)", fontsize=14, fontweight="bold", y=1.01)
+    plt.tight_layout()
+    plt.show()
+
+
+def selectionner_modele_champion(df_recap_final):
+    champion_row   = df_recap_final.iloc[0]
+    champion_lbl   = champion_row["Modèle"]
+    preds_champion = champion_row["preds"]
+
+    print(f"Modèle retenu : {champion_lbl}")
+    print(f"  MAPE     : {champion_row['MAPE']:.2%}")
+    print(f"  R²       : {champion_row['R²']:.4f}")
+    print(f"  MAE      : {champion_row['MAE']:>12,.0f} €")
+    print(f"  RMSE_log : {champion_row['RMSE_log']:.4f}")
+
+    return champion_lbl, preds_champion, champion_row
