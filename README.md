@@ -28,7 +28,7 @@ Ce projet a été développé dans le cadre d'un stage. Il vise à construire un
 
 ### Prérequis
 
-- Python 3.x
+- Python 3
 - PowerShell pour `install.ps1`
 - Un compte [Kaggle](https://www.kaggle.com) (API) pour télécharger les datasets Transfermarkt et FIFA ranking
 
@@ -166,7 +166,7 @@ Le notebook `09_modelisation_finale.ipynb` reprend les enseignements de `08` pou
 
 ## Explicabilité et segmentation des joueurs
 
-Au-delà de la prédiction, le notebook `09` propose deux volets d'analyse orientés aide à la décision pour un club :
+Au-delà de la prédiction, le notebook `10_explicabilite_modele.ipynb` propose des analyses orientées aide à la décision pour un club :
 
 - **Explicabilité (feature importance + SHAP)** : importance globale des variables, puis analyses SHAP globales (profil moyen) et locales (un joueur donné) pour comprendre ce qui pousse une prédiction à la hausse ou à la baisse.
 - **Trajectoires de valeur marchande** : reconstitution de l'historique complet de chaque joueur (toutes saisons, tous splits confondus), calcul des écarts de valeur d'une saison à l'autre (€ et %), puis **clustering** des joueurs selon le niveau et la pente de leur trajectoire de valeur. Quatre profils sont identifiés et interprétés par SHAP :
@@ -174,11 +174,9 @@ Au-delà de la prédiction, le notebook `09` propose deux volets d'analyse orien
   | Profil | Effectif | VM moyenne | Évolution / saison | Lecture |
   |---|---|---|---|---|
   | Rotation / valeur modeste | 694 (49.1 %) | ≈ 3.9 M€ | -1.1 M€ | Fortement pénalisé par l'âge ; cible pour du volume ou de la plus-value sur profils jeunes |
-  | Cadres en progression | 421 (29.8 %) | ≈ 21.3 M€ | +1.9 M€ | Portés par le niveau collectif du club ; cible pour la performance immédiate à risque maîtrisé |
-  | Stars post-pic en repli | 203 (14.4 %) | ≈ 14.7 M€ | -7.0 M€ | Le plus pénalisé par l'âge/l'éloignement du pic ; à éviter en optique plus-value |
-  | Superstars en forte hausse | 96 (6.8 %) | ≈ 68.3 M€ | +12.1 M€ | Amplitude d'impact hors norme de la VM N-1 ; cible premium performance immédiate |
-
-  Cette segmentation sert de **support de storytelling** pour orienter une stratégie de recrutement : *plus-value* (dénicher un profil qui va prendre de la valeur) vs *performance immédiate* (recruter un profil déjà performant, quitte à payer plus cher). Ces lectures restent à croiser avec le poste du joueur recherché.
+  | Cadres en progression | 421 (29.8 %) | ≈ 21.3 M€ | +1.9 M€ | Portés par le niveau collectif du club ; cible pour la performance immédiate avec un risque faible |
+  | Stars post-pic en repli | 203 (14.4 %) | ≈ 14.7 M€ | -7.0 M€ | Le plus pénalisé par l'âge/l'éloignement du pic ; à éviter si l'objectif est la plus-value |
+  | Superstars en forte hausse | 96 (6.8 %) | ≈ 68.3 M€ | +12.1 M€ | Amplitude forte de la valeur marchande passée ; objetif de performance immédiate |
 
 ## Technologies
 
