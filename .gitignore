@@ -8,6 +8,7 @@
 *.png
 *.tsv
 *.tfevents
+*.pkl
 .env
 !mapping_fbref_tm.csv
 !dataset_blessures.csv
