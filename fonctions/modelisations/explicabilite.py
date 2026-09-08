@@ -215,6 +215,12 @@ class StackingModel(BaseEstimator, RegressorMixin):
         return prediction_euros
 
 
+def predict(self, X):
+        X_meta = np.column_stack([
+            np.expm1(model.predict(X)) for model in self.models
+        ])
+
+
 def calculer_permutation_importance(modele, X_val, y_val, scoring="r2", n_repeats=1, random_state=1308,
                                     n_jobs=-1, afficher_resultat=True, ):
     """Calcule et affiche l'importance des variables par permutation.
@@ -243,7 +249,7 @@ def calculer_permutation_importance(modele, X_val, y_val, scoring="r2", n_repeat
 
 
 def afficher_top_features_importance(df_importances, dict_variables=None, top_n=15, figsize=(10, 6),
-                                     color="steelblue", titre=None):
+                                     color="steelblue"):
     """Affiche un barplot horizontal du Top N des variables les plus importantes."""
     # Extraction du Top N
     top_df = df_importances.head(top_n).copy()
@@ -270,8 +276,7 @@ def afficher_top_features_importance(df_importances, dict_variables=None, top_n=
     )
 
     plt.xlabel("Baisse du R² après permutation")
-    if titre:
-        plt.title(titre)
+    plt.title("Permutation Feature Importance")
 
     plt.tight_layout()
     plt.show()
@@ -399,17 +404,22 @@ def colorer_labels_waterfall(fig_ou_ax, couleur_par_label, couleur_defaut="#2e34
             label.set_color(couleur_par_label[texte])
 
 
-def afficher_waterfall_shap_joueur(modeles_finaux, X_val, df_val, predict_m_euro, groupes,
+def afficher_waterfall_shap_joueur(modeles_finaux, X_val, df_val,  groupes,
                                    palette_pro, indice_joueur=90, nom_modele="XGBoost (log)",
                                    colonne_joueur="player", n_samples_bg=100, random_state=42):
     """Calcule et affiche le graphique Waterfall SHAP personnalisé pour un joueur donné."""
     nom_joueur = df_val[colonne_joueur].iloc[indice_joueur]
 
     # Calcul des valeurs SHAP
-    background_data = shap.sample(
-        X_val, n_samples_bg, random_state=random_state
-    )
-    explainer_m_euro = shap.Explainer(predict_m_euro, background_data)
+    # Récupération du modèle
+    modele = modeles_finaux[nom_modele]
+
+    # Fonction de prédiction en euros réels
+    predict_fn = lambda x: np.expm1(modele.predict(x))  # ou np.exp(modele.predict(x))
+
+    # Calcul des valeurs SHAP
+    background_data = shap.sample(X_val, n_samples_bg, random_state=random_state)
+    explainer_m_euro = shap.Explainer(predict_fn, background_data)
     shap_values_m_euro = explainer_m_euro(X_val.iloc[[indice_joueur]])
 
     # Regroupement et renommage
@@ -635,12 +645,62 @@ def explications_lime_joueur(model, X_train, X_val, df_val, indice_joueur=90, co
     return df_lime
 
 
+def reconstituer_historique(df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.DataFrame,
+                            df_en_cours: pd.DataFrame, colonne_cible: str, colonne_joueur: str = "player",
+                            colonne_team: str = "team", ) -> pd.DataFrame:
+
+    colonnes_historique = [colonne_joueur, colonne_team, "season_year", colonne_cible, "pic_distance", "age"]
+
+    splits = {"train": df_train, "val": df_val, "test": df_test, "en_cours": df_en_cours}
+
+    dfs_temp = []
+    for nom_split, df in splits.items():
+        df_sub = df[colonnes_historique].copy()
+        df_sub["split"] = nom_split
+        dfs_temp.append(df_sub)
+
+    df_historique = pd.concat(dfs_temp, ignore_index=True).sort_values( [colonne_joueur, "season_year"])
+
+    # Sécurité : un joueur ne doit avoir qu'une seule ligne par saison
+    df_historique = df_historique.drop_duplicates(subset=[colonne_joueur, "season_year"] ).reset_index(drop=True)
+    print(
+        f"{df_historique[colonne_joueur].nunique()} joueurs uniques sur "
+        f"{df_historique['season_year'].nunique()} saisons."
+    )
+
+    return df_historique
+
+
+def calculer_ecarts_saisons(df_historique: pd.DataFrame, colonne_cible: str, colonne_joueur: str = "player",
+                            colonne_saison: str = "season_year") -> pd.DataFrame:
+
+    df = df_historique.copy()
+
+    # S'assurer que les données sont bien triées par joueur et saison
+    df = df.sort_values([colonne_joueur, colonne_saison]).reset_index(drop=True)
+
+    # Récupération des valeurs de la saison précédente
+    df["VM_precedente"] = df.groupby(colonne_joueur)[colonne_cible].shift(1)
+    df["saison_precedente"] = df.groupby(colonne_joueur)[colonne_saison].shift(1)
+
+    # Calcul des deltas en valeur absolue et relative
+    df["delta_vm_eur"] = df[colonne_cible] - df["VM_precedente"]
+    df["delta_vm_pct"] = (df[colonne_cible] - df["VM_precedente"]) / df["VM_precedente"]
+
+    # Masquer les deltas si les saisons ne sont pas consécutives
+    ecart_saisons = df[colonne_saison] - df["saison_precedente"]
+    mask_non_consecutif = ecart_saisons != 1
+    df.loc[mask_non_consecutif, ["delta_vm_eur", "delta_vm_pct"]] = np.nan
+
+    return df
+
+
 # Mapping par défaut si n_clusters = 4
 NOMS_CLUSTERS_DEFAULT = {
     0: "Rotation / valeur modeste",
     1: "Cadres en progression",
-    2: "Stars post-pic en repli",
-    3: "Superstars en forte hausse",
+    2: "Superstars en forte hausse",
+    3: "Stars post-pic en repli",
 }
 
 
@@ -778,7 +838,7 @@ def segmenter_trajectoires_joueurs( df_historique, colonne_cible="market_value_i
         ].round(1)
         print(resume_groupes)
 
-    return stats_joueurs, kmeans, scaler, scores_silhouette
+    return stats_joueurs, kmeans, scaler, scores_silhouette, X_cluster
 
 
 def visualiser_clusters_trajectoires(stats_joueurs, X_cluster, features_plot=None, col_cluster="cluster",
