@@ -1,0 +1,19 @@
+# Fichiers de données volumineux
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.json
+*.feather
+*.png
+*.tsv
+*.tfevents
+*.pkl
+.env
+!mapping_fbref_tm.csv
+!dataset_blessures.csv
+/venv/*
+__pycache__/
+catboost_*/
+*.pyc
+*.lock
