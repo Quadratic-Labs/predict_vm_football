@@ -162,7 +162,7 @@ Le notebook `09_modelisation_finale.ipynb` reprend les enseignements de `08` pou
 | XGBoost (log) | 40.69 % | 3 231 307 € | 0.891 |
 | CatBoost (log) | 41.11 % | 3 433 511 € | 0.880 |
 
-**Stacking OOF (modèle final)** : le Stacking OOF combine les 3 modèles via un méta-modèle linéaire à coefficients positifs (combinaison convexe), entraîné sur des prédictions out-of-fold pour éviter que le méta-modèle ne surapprenne les prédictions déjà vues par les modèles de base. Poids appris : LightGBM **A COMPLETER**, CatBoost **A COMPLETER**, XGBoost **A COMPLETER** (intercept ≈ **A COMPLETER** €). C'est cette prédiction combinée qui est retenue comme prédiction finale du projet.
+**Stacking OOF (modèle final)** : le Stacking OOF combine les 3 modèles via un méta-modèle linéaire à coefficients positifs (combinaison convexe), entraîné sur des prédictions out-of-fold pour éviter que le méta-modèle ne surapprenne les prédictions déjà vues par les modèles de base. Poids appris : LightGBM 0.382, CatBoost **A COMPLETER**, XGBoost 0.189 (intercept ≈ 0.486 €). C'est cette prédiction combinée qui est retenue comme prédiction finale du projet.
 
 ## Explicabilité et segmentation des joueurs
 
@@ -177,6 +177,29 @@ Au-delà de la prédiction, le notebook `10_explicabilite_modele.ipynb` propose 
   | Cadres en progression | 421 (29.8 %) | ≈ 21.3 M€ | +1.9 M€ | Portés par le niveau collectif du club ; cible pour la performance immédiate avec un risque faible |
   | Stars post-pic en repli | 203 (14.4 %) | ≈ 14.7 M€ | -7.0 M€ | Le plus pénalisé par l'âge/l'éloignement du pic ; à éviter si l'objectif est la plus-value |
   | Superstars en forte hausse | 96 (6.8 %) | ≈ 68.3 M€ | +12.1 M€ | Amplitude forte de la valeur marchande passée ; objetif de performance immédiate |
+
+## Interface finale de prédiction
+
+Le notebook `11_prediction_joueur.ipynb` est l'interface d'utilisation du modèle final : il permet d'estimer la valeur marchande d'un joueur sans avoir à ré-entraîner de modèle.
+
+**Autosuffisant** : il ne dépend que du fichier `../modelisation/pipeline_explicabilite.pkl`, généré à la fin de `09_modelisation_finale.ipynb`, qui contient les 3 modèles de base déjà entraînés (XGBoost, LightGBM, CatBoost), le méta-modèle du Stacking, ainsi que les jeux de données train / validation / test / en cours.
+
+### Deux modes de prédiction
+
+- **Recherche d'un joueur existant** : recherche par nom (avec correspondance approchée) parmi toutes les saisons disponibles. Par défaut, la saison la plus récente est utilisée, mais une saison précise peut être précisée.
+- **Saisie manuelle** : simulation d'un joueur (nouveau, hypothétique ou partiellement connu) à partir d'un profil "joueur moyen" (médiane des variables numériques / modalité la plus fréquente pour les variables catégorielles, calculés sur le train). Seuls les champs connus sont à renseigner parmi : `age`, `taille_cm`, `pied`, `poste`, `championnat`, `valeur_marchande_precedente_euros`, `classement_equipe`, `buts`, `passes_decisives`, `matchs_joues`, `minutes_jouees_par_match`.
+
+### Exports pour PowerBI
+
+Le notebook génère trois fichiers CSV dans `../exports/` :
+
+| Fichier | Contenu |
+|---|---|
+| `predictions_session_powerbi.csv` | Historique des prédictions réalisées dans la session (recherche + saisie manuelle) |
+| `historique_vm_joueurs_powerbi.csv` | VM réelle vs prédite pour **tous les joueurs**, toutes saisons et tous splits confondus (~14 400 lignes joueur/saison) |
+| `table_sensibilite_powerbi.csv` | Table précalculée pour des curseurs PowerBI interactifs (What-if parameters) sur 4 variables : âge, buts, VM saison précédente, classement de l'équipe — pour un profil "joueur moyen" et un joueur réel de référence |
+
+Ces tables permettent de brancher les prédictions du modèle dans un tableau de bord PowerBI sans configuration Python côté PowerBI : les curseurs vont chercher la valeur précalculée correspondante.
 
 ## Technologies
 
