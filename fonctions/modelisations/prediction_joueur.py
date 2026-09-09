@@ -35,16 +35,16 @@ def predire_et_afficher(modele_stack, historique_predictions, X_ligne, nom_affic
     """Calcule la prédiction, l'affiche de façon lisible, et l'ajoute à l'historique."""
     prediction = modele_stack.predict(X_ligne)[0]
 
-    print(f"\U0001F464 {nom_affiche}")
+    print(f" {nom_affiche}")
     if saison is not None:
         print(f"   Saison               : {saison}")
-    print(f"   \U0001F4B0 Valeur marchande prédite : {formater_euros(prediction)}")
+    print(f"    Valeur marchande prédite : {formater_euros(prediction)}")
 
     ecart_pct = None
     if valeur_reelle is not None:
         ecart_pct = (prediction - valeur_reelle) / valeur_reelle * 100
-        print(f"   \U0001F4CA Valeur réelle connue    : {formater_euros(valeur_reelle)}")
-        print(f"   \U0001F4C8 Écart                   : {ecart_pct:+.1f} %")
+        print(f"    Valeur réelle connue    : {formater_euros(valeur_reelle)}")
+        print(f"    Écart                   : {ecart_pct:+.1f} %")
 
     historique_predictions.append({
         "date_prediction": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -78,14 +78,14 @@ def predire_joueur_existant(nom, datasets, modele_stack, historique_predictions,
     if not correspondances:
         tous_les_noms = pd.concat([df[colonne_joueur] for df, _ in datasets.values()]).unique()
         suggestions = difflib.get_close_matches(nom, tous_les_noms, n=5, cutoff=0.5)
-        print(f"\u274C Aucun joueur trouvé pour « {nom} ».")
+        print(f"Aucun joueur trouvé pour « {nom} ».")
         if len(suggestions):
             print("   Suggestions proches :", ", ".join(suggestions))
         return None
 
     noms_trouves = sorted(set(c[0] for c in correspondances))
     if len(noms_trouves) > 1:
-        print(f"\u26A0\uFE0F Plusieurs joueurs correspondent à « {nom} » : {noms_trouves}")
+        print(f"Plusieurs joueurs correspondent à « {nom} » : {noms_trouves}")
         print("   Merci de préciser un nom plus exact.")
         return None
 
@@ -96,14 +96,14 @@ def predire_joueur_existant(nom, datasets, modele_stack, historique_predictions,
         choix = [c for c in correspondances_joueur if c[1] == saison]
         if not choix:
             saisons_dispo = sorted(c[1] for c in correspondances_joueur)
-            print(f"\u274C Saison {saison} non trouvée pour {nom_exact}. Saisons disponibles : {saisons_dispo}")
+            print(f"Saison {saison} non trouvée pour {nom_exact}. Saisons disponibles : {saisons_dispo}")
             return None
         _, saison_choisie, split, idx = choix[0]
     else:
         _, saison_choisie, split, idx = max(correspondances_joueur, key=lambda c: c[1])
         if len(correspondances_joueur) > 1:
             print(
-                f"\u2139\uFE0F {len(correspondances_joueur)} saisons trouvées pour {nom_exact}, "
+                f"{len(correspondances_joueur)} saisons trouvées pour {nom_exact}, "
                 f"on utilise la plus récente ({saison_choisie}). "
                 f"Précisez saison=... pour en choisir une autre."
             )
@@ -199,7 +199,7 @@ def construire_ligne_manuelle(saisie, X_train):
     ligne = ligne_par_defaut(X_train)
     champs_ignores = appliquer_saisie_metier(ligne, saisie)
     if champs_ignores:
-        print(f"\u26A0\uFE0F Champs ignorés (colonne absente du modèle) : {champs_ignores}")
+        print(f" Champs ignorés (colonne absente du modèle) : {champs_ignores}")
     return ligne
 
 
