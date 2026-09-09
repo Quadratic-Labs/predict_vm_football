@@ -1,0 +1,244 @@
+import numpy as np
+import pandas as pd
+
+
+def generer_feature_engineering(df):
+    """Calcule et ajoute des variables explicatives complexes (ratios tactiques,
+
+    tendances inter-saisons, statut de l'âge et contexte équipe) au DataFrame
+    en utilisant les colonnes exactes fournies.
+    """
+    print("Début de la création des nouvelles variables (Feature Engineering)...")
+
+    # Copie locale pour éviter les conflits de modification
+    df_fe = df.copy()
+
+    # Tri chronologique par joueur
+    if "player" in df_fe.columns and "season_year" in df_fe.columns:
+        df_fe = df_fe.sort_values(by=["player", "season_year"]).reset_index(
+            drop=True
+        )
+
+    # Indice de verticalité
+    if "Standard_G/SoT" in df_fe.columns and "Standard_SoT%" in df_fe.columns:
+        # Indique l'efficacité face au but par rapport à la précision globale
+        df_fe["indice_danger_tirs"] = (
+            df_fe["Standard_G/SoT"] * df_fe["Standard_SoT%"] / 100.0
+        )
+
+    # Ratio d'agressivité défensive (Fautes commises / Interceptions + Tacles Gagnés)
+    if all(
+        c in df_fe.columns
+        for c in ["Performance_Fls", "Performance_Int", "Performance_TklW"]
+    ):
+        denominateur_def = df_fe["Performance_Int"] + df_fe["Performance_TklW"]
+        df_fe["ratio_agressivite"] = np.where(
+            denominateur_def > 0,
+            df_fe["Performance_Fls"] / denominateur_def,
+            0,
+        )
+
+    # Indice de menace de gardien
+    if "Performance_Save%" in df_fe.columns and "height_in_cm" in df_fe.columns:
+        df_fe["taux_arretXtaille_gardien"] = ( df_fe["Performance_Save%"] / 100.0 ) * df_fe["height_in_cm"]
+
+    # Ratio de danger converti
+    if "Performance_Gls" in df_fe.columns and "xg" in df_fe.columns:
+        df_fe["efficacite_devant_but"] = np.where( df_fe["Performance_Gls"] > 0, df_fe["xg"] / df_fe["Performance_Gls"], 9.0)
+
+    if "player" in df_fe.columns and "season_year" in df_fe.columns:
+        
+        # On récupère l'année de la saison de la ligne précédente pour chaque joueur
+        df_fe["saison_precedente_reelle"] = df_fe.groupby("player")["season_year"].shift(1)
+        
+        # True si la ligne précédente est bien la saison N-1
+        saison_consecutive = (df_fe["season_year"] - df_fe["saison_precedente_reelle"]) == 1
+
+        # Tendance du temps de jeu
+        if "Playing Time_Min" in df_fe.columns:
+            # On récupère la valeur précédente
+            minutes_prec = df_fe.groupby("player")["Playing Time_Min"].shift(1)
+            
+            # On calcule le delta brut
+            df_fe["delta_minutes_jouees"] = df_fe["Playing Time_Min"] - minutes_prec
+            
+            # Si ce n'est pas consécutif, on force à 0
+            df_fe["delta_minutes_jouees"] = np.where(saison_consecutive, df_fe["delta_minutes_jouees"], 0)
+            
+            # Gestion des NaN pour la toute première saison connue du joueur
+            df_fe["delta_minutes_jouees"] = df_fe["delta_minutes_jouees"].fillna(0)
+
+        # Tendance des Expected Goals (xg)
+        if "xg" in df_fe.columns:
+            # On récupère la valeur précédente
+            xg_prec = df_fe.groupby("player")["xg"].shift(1)
+            
+            # On calcule le delta brut
+            df_fe["delta_xg"] = df_fe["xg"] - xg_prec
+            
+            # Si ce n'est pas consécutif, on force à 0
+            df_fe["delta_xg"] = np.where(saison_consecutive, df_fe["delta_xg"], 0)
+            
+            # Gestion des NaN pour la toute première saison connue du joueur
+            df_fe["delta_xg"] = df_fe["delta_xg"].fillna(0)
+
+        # Nettoyage de la colonne technique temporaire
+        df_fe.drop(columns=["saison_precedente_reelle"], inplace=True)
+
+    # Poids offensif du joueur (Buts + Passes Décisives du joueur / Total Buts de l'équipe)
+    if all( c in df_fe.columns for c in ["Performance_Gls", "Performance_Ast", "team", "season_year"] ):
+        # Somme des buts de l'équipe par saison
+        buts_equipe = ( df_fe.groupby(["team", "season_year"])["Performance_Gls"] .sum() .reset_index() )
+        buts_equipe.columns = ["team", "season_year", "total_buts_equipe"]
+
+        # Fusion
+        df_fe = pd.merge( df_fe, buts_equipe, on=["team", "season_year"], how="left" )
+
+        # Calcul du ratio d'implication
+        df_fe["contribution_offensive_equipe"] = np.where(
+            df_fe["total_buts_equipe"] > 0,
+            (df_fe["Performance_Gls"] + df_fe["Performance_Ast"])
+            / df_fe["total_buts_equipe"],
+            0,
+        )
+        df_fe.drop(columns=["total_buts_equipe"], inplace=True)
+
+    # Taux d'indisponibilité annuel
+    if "injury_days_total" in df_fe.columns:
+        df_fe["taux_indisponibilite"] = (df_fe["injury_days_total"] / 365.0).clip(upper=1.0)
+
+    if "player" in df_fe.columns and "taux_indisponibilite" in df_fe.columns:
+        # Récupération du taux de la saison précédente
+        df_fe["taux_indisponibilite_prec"] = df_fe.groupby("player")["taux_indisponibilite"].shift(1).fillna(0)
+        
+        # Indicateur de fragilité récurrente (Blessé deux saisons de suite)
+        df_fe["fragilite_chronique"] = np.where( (df_fe["taux_indisponibilite"] > 0.15) & (df_fe["taux_indisponibilite_prec"] > 0.15), 1, 0 )
+
+
+    # Score lié à la nation
+    df_fe["score_hype_nation"] = 0
+
+    # Boucle pour calculer dynamiquement la somme pondérée : (11 - i) * classement_FIFA_i
+    for i in range(1, 11):
+        col_fifa = f"classement_FIFA_{i}"
+        if col_fifa in df_fe.columns:
+            poids = 11 - i
+            df_fe["score_hype_nation"] += poids * df_fe[col_fifa]
+
+
+    # Rentabilité des buts par minute
+    if "Performance_Gls" in df_fe.columns and "Playing Time_Min" in df_fe.columns:
+        df_fe["rentabilite_buts_minutes"] = np.where(
+            df_fe["Playing Time_Min"] > 0,
+            df_fe["Performance_Gls"] / df_fe["Playing Time_Min"],
+            0.0,  # 0 si le joueur n'a joué aucune minute cette saison
+        )
+
+
+    # Urgence contractuelle (1 si contrat_jours_restants <= 365, sinon 0)
+    if "contrat_jours_restants" in df_fe.columns:
+        df_fe["urgence_contractuelle"] = np.where(
+            df_fe["contrat_jours_restants"] <= 365, 1, 0
+        )
+
+    
+    # Indice d'impact de points (buts par match pondérés par les points d'équipe)
+    if "Performance_Gls" in df_fe.columns and "Team Success_PPM" in df_fe.columns and "Playing Time_MP" in df_fe.columns:
+        df_fe["impact_buts_points"] = np.where(
+            df_fe["Playing Time_MP"] > 0,
+            (df_fe["Performance_Gls"] / df_fe["Playing Time_MP"]) * df_fe["Team Success_PPM"],
+            0.0
+        )
+    
+    # Score de indiscipline (Pondération : Rouge = 3 Jaunes)    
+    if all(c in df_fe.columns for c in ["Performance_CrdY", "Performance_CrdR", "Performance_2CrdY"]):
+        rouge_direct = df_fe["Performance_CrdR"] - df_fe["Performance_2CrdY"]
+        
+        # Jaunes "simples" = jaunes totaux moins ceux qui ont causé une expulsion (2 par double jaune)
+        jaune_simple = df_fe["Performance_CrdY"] - (df_fe["Performance_2CrdY"] * 2)
+        
+        df_fe["score_indiscipline_brut"] = (
+            jaune_simple               * 1 +
+            rouge_direct                * 6 +
+            df_fe["Performance_2CrdY"]  * 3
+        )
+
+        if "Playing Time_90s" in df_fe.columns:
+            df_fe["indiscipline_par_90"] = np.where(
+                df_fe["Playing Time_90s"] > 0,
+                df_fe["score_indiscipline_brut"] / df_fe["Playing Time_90s"],
+                0.0
+            )
+            df_fe.drop(columns=["score_indiscipline_brut"], inplace=True)
+
+
+    # Part des buts marqués hors penalty
+    if "Performance_Gls" in df_fe.columns and "Performance_PK" in df_fe.columns:
+        df_fe["ratio_buts_hors_penalty"] = np.where(
+            df_fe["Performance_Gls"] > 0,
+            (df_fe["Performance_Gls"] - df_fe["Performance_PK"]) / df_fe["Performance_Gls"],
+            0.0
+        )
+    
+    if "Performance_Gls" in df_fe.columns and "Performance_PK" in df_fe.columns:
+        df_fe["ratio_buts_penalty"] = np.where(
+            df_fe["Performance_Gls"] > 0,
+            1 - (df_fe["Performance_Gls"] - df_fe["Performance_PK"]) / df_fe["Performance_Gls"],
+            0.0
+        )
+
+    # On identifie dynamiquement toutes les colonnes liées aux postes encodés
+    colonnes_postes = [c for c in df_fe.columns if c.startswith("pos_")]
+
+    if colonnes_postes:
+        # On fait la somme horizontale (.sum(axis=1)) des colonnes de postes.
+        # Si un joueur est à la fois MF (1) et FW (1), la somme fera 2.
+        df_fe["est_polyvalent"] = df_fe[colonnes_postes].sum(axis=1) - 1
+
+    # Taux de matchs terminés sur les matchs commencés
+    if "Starts_Compl" in df_fe.columns and "Playing Time_Starts" in df_fe.columns:
+        df_fe["taux_matchs_termines"] = np.where(
+            df_fe["Playing Time_Starts"] > 0,
+            df_fe["Starts_Compl"] / df_fe["Playing Time_Starts"],
+            0.0
+        )
+    
+    if "age" in df_fe.columns:
+        df_fe["pic_distance"]   = df_fe["age"] - 25
+        df_fe["age_sq"]          = df_fe["age"] ** 2
+        df_fe["pic_age"]        = ((df_fe["age"] >= 24) & (df_fe["age"] <= 28)).astype(int)
+
+
+
+    # Création de la variable "competition_internationale"
+
+    # Dictionnaire des années de compétitions continentales par confédération
+    CONTINENTAL_YEARS_BY_CONFED = {
+        "confederation_CAF": {2020, 2022, 2024},
+        "confederation_UEFA": {2020, 2023},
+        "confederation_CONMEBOL": {2020, 2023},
+        "confederation_CONCACAF": {2020, 2022, 2024},
+        "confederation_AFC": {2022},
+        "confederation_OFC": {2023}
+    }
+
+    # Application de la logique d'encodage
+    if "season_year" in df_fe.columns:
+        # Condition 1 : Coupe du Monde
+        is_world_cup = ((df_fe["season_year"] + 1) % 4 == 2)
+
+        # Condition 2 : Coupe continentale spécifique à la confédération du joueur
+        is_continental = pd.Series(False, index=df_fe.index)
+        
+        for confed_col, years in CONTINENTAL_YEARS_BY_CONFED.items():
+            if confed_col in df_fe.columns:
+                is_continental |= (df_fe[confed_col] == 1) & df_fe["season_year"].isin(years)
+
+        # Résultat : 1 si Coupe du Monde ou Coupe Continentale, sinon 0
+        df_fe["competition_internationale"] = (is_world_cup | is_continental).astype(int)
+
+    print()
+    print( f"Feature Engineering terminé ! Nombre total de colonnes : {df_fe.shape[1]}" )
+    print()
+
+    return df_fe
