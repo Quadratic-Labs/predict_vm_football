@@ -69,7 +69,7 @@ Le token s'obtient depuis le profil Kaggle > **Settings** > section **API** > **
 
 1. Activer l'environnement virtuel (`.venv`).
 2. Renseigner le fichier `.env` (identifiants Kaggle).
-3. Exécuter les notebooks dans l'ordre numéroté (`01_...` à `09_...`) depuis le dossier `notebooks/`.
+3. Exécuter les notebooks dans l'ordre numéroté (`01_...` à `11_...`) depuis le dossier `notebooks/`.
 4. Les données intermédiaires et finales sont stockées dans `data_finale/`, les résultats et figures dans `outputs/`.
 
 
