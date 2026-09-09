@@ -18,8 +18,8 @@ Périmètre : les **5 grands championnats européens** (Big 5 : Angleterre, Espa
 - [Approche de modélisation](#approche-de-modélisation)
 - [Modèle final retenu](#modèle-final-retenu)
 - [Explicabilité et segmentation des joueurs](#explicabilité-et-segmentation-des-joueurs)
+- [Interface finale de prédiction](#interface-finale_de_prédiction)
 - [Technologies](#technologies)
-- [Interface finale de prédiction](#interface)
 
 ## Contexte
 
