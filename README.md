@@ -183,7 +183,7 @@ Au-delà de la prédiction, le notebook `10_explicabilite_modele.ipynb` propose 
 
 Le notebook `11_prediction_joueur.ipynb` est l'interface d'utilisation du modèle final : il permet d'estimer la valeur marchande d'un joueur sans avoir à ré-entraîner de modèle.
 
-**Autosuffisant** : il ne dépend que du fichier `../modelisation/pipeline_explicabilite.pkl`, généré à la fin de `09_modelisation_finale.ipynb`, qui contient les 3 modèles de base déjà entraînés (XGBoost, LightGBM, CatBoost), le méta-modèle du Stacking, ainsi que les jeux de données train / validation / test / en cours.
+Il est **autosuffisant** : il ne dépend que du fichier `../modelisation/pipeline_explicabilite.pkl`, généré à la fin de `09_modelisation_finale.ipynb`, qui contient les 3 modèles de base déjà entraînés (XGBoost, LightGBM, CatBoost), le méta-modèle du Stacking, ainsi que les jeux de données train / validation / test / en_cours.
 
 ### Deux modes de prédiction
 
@@ -198,9 +198,9 @@ Le notebook génère trois fichiers CSV dans `../exports/` :
 |---|---|
 | `predictions_session_powerbi.csv` | Historique des prédictions réalisées dans la session (recherche + saisie manuelle) |
 | `historique_vm_joueurs_powerbi.csv` | VM réelle vs prédite pour **tous les joueurs**, toutes saisons et tous splits confondus (~14 400 lignes joueur/saison) |
-| `table_sensibilite_powerbi.csv` | Table précalculée pour des curseurs PowerBI interactifs (What-if parameters) sur 4 variables : âge, buts, VM saison précédente, classement de l'équipe — pour un profil "joueur moyen" et un joueur réel de référence |
+| `table_sensibilite_powerbi.csv` | Table précalculée pour des curseurs PowerBI interactifs sur 4 variables : âge, buts, VM saison précédente, classement de l'équipe pour un profil "joueur moyen" et un joueur réel de référence |
 
-Ces tables permettent de brancher les prédictions du modèle dans un tableau de bord PowerBI sans configuration Python côté PowerBI : les curseurs vont chercher la valeur précalculée correspondante.
+Ces tables permettent de brancher les prédictions du modèle dans un tableau de bord PowerBI sans configuration Python : les curseurs vont chercher la valeur précalculée correspondante.
 
 ## Technologies
 
