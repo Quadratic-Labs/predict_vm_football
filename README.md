@@ -27,11 +27,11 @@ Ce projet a été développé dans le cadre d'un stage. Il vise à construire un
 
 ## Installation
 
-### Prérequis
+## Prérequis
 
-- Python 3
-- PowerShell pour `install.ps1`
-- Un compte [Kaggle](https://www.kaggle.com) (API) pour télécharger les datasets Transfermarkt et FIFA ranking
+- Python 3 (recommandé : 3.10+)
+- PowerShell (pour l'exécution du script `install.ps1`)
+- Un compte [Kaggle](https://www.kaggle.com) (clé API configurée) pour télécharger les datasets Transfermarkt et FIFA ranking
 
 ### Étapes
 
@@ -42,7 +42,7 @@ cd predict_vm_football
 
 # Créer et activer un environnement virtuel
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 
 # Installer les dépendances
 pip install -r requirements.txt
