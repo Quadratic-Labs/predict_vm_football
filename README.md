@@ -89,6 +89,8 @@ Les notebooks du dossier notebooks/ composent le pipeline de traitement du proje
 | 07 | `modelisation_baseline` | Premier modèle de référence |
 | 08 | `tests_modelisation` | Expérimentations de modélisation (comparaison d'algorithmes, stacking, transformations de la cible, retrait des outliers, réduction de dimensionnalité, modèles par poste) |
 | 09 | `modelisation_finale` | Modèle final retenu et évaluation |
+| 10 | `explicabilite_modele` | Explicabilité globale et locale du modèle |
+| 11 | `prediction_joueur` | Prédiction spécifique à un joueur |
 
 Les fonctions communes utilisées par ces notebooks sont centralisées dans `fonctions/` (un fichier ou sous-dossier par étape du pipeline), pour éviter la répétition de code dans les différents notebooks.
 
@@ -155,29 +157,16 @@ Le notebook `08_tests_modelisation.ipynb` documente les expérimentations menée
 
 Le notebook `09_modelisation_finale.ipynb` reprend les enseignements de `08` pour produire le modèle final : **CatBoost, XGBoost et LightGBM entraînés sur la cible `log1p`**, combinés par **Stacking OOF**. L'optimisation se fait sur la **MAPE**. Le split reste temporel : Train 2020-2022 / Validation 2023 / Test 2024 (Saison en cours 2025 utilisée comme jeu d'évaluation supplémentaire, hors optimisation).
 
-**Performance des modèles de base sur le jeu de test :**
 
-| Modèle | MAPE | MAE | R² |
-|---|---|---|---|
-| LightGBM (log) | 40.17 % | 3 321 653 € | 0.877 |
-| XGBoost (log) | 40.69 % | 3 231 307 € | 0.891 |
-| CatBoost (log) | 41.11 % | 3 433 511 € | 0.880 |
-
-**Stacking OOF (modèle final)** : le Stacking OOF combine les 3 modèles via un méta-modèle linéaire à coefficients positifs (combinaison convexe), entraîné sur des prédictions out-of-fold pour éviter que le méta-modèle ne surapprenne les prédictions déjà vues par les modèles de base. Poids appris : LightGBM 0.382, CatBoost **A COMPLETER**, XGBoost 0.189 (intercept ≈ 0.486 €). C'est cette prédiction combinée qui est retenue comme prédiction finale du projet.
+**Stacking OOF (modèle final)** : le Stacking OOF combine les 3 modèles via un méta-modèle linéaire à coefficients positifs (combinaison convexe), entraîné sur des prédictions out-of-fold pour éviter que le méta-modèle ne surapprenne les prédictions déjà vues par les modèles de base. C'est cette prédiction combinée qui est retenue comme prédiction finale du projet.
 
 ## Explicabilité et segmentation des joueurs
 
 Au-delà de la prédiction, le notebook `10_explicabilite_modele.ipynb` propose des analyses orientées aide à la décision pour un club :
 
 - **Explicabilité (feature importance + SHAP)** : importance globale des variables, puis analyses SHAP globales (profil moyen) et locales (un joueur donné) pour comprendre ce qui pousse une prédiction à la hausse ou à la baisse.
-- **Trajectoires de valeur marchande** : reconstitution de l'historique complet de chaque joueur (toutes saisons, tous splits confondus), calcul des écarts de valeur d'une saison à l'autre (€ et %), puis **clustering** des joueurs selon le niveau et la pente de leur trajectoire de valeur. Quatre profils sont identifiés et interprétés par SHAP :
+- **Trajectoires de valeur marchande** : reconstitution de l'historique complet de chaque joueur (toutes saisons, tous splits confondus), calcul des écarts de valeur d'une saison à l'autre (€ et %), puis **clustering** des joueurs selon le niveau et la pente de leur trajectoire de valeur. Quatre profils sont identifiés et interprétés par SHAP : Rotation / valeur modeste, Cadres en progression, Stars post-pic en repli et Superstars en forte hausse
 
-  | Profil | Effectif | VM moyenne | Évolution / saison | Lecture |
-  |---|---|---|---|---|
-  | Rotation / valeur modeste | 694 (49.1 %) | ≈ 3.9 M€ | -1.1 M€ | Fortement pénalisé par l'âge ; cible pour du volume ou de la plus-value sur profils jeunes |
-  | Cadres en progression | 421 (29.8 %) | ≈ 21.3 M€ | +1.9 M€ | Portés par le niveau collectif du club ; cible pour la performance immédiate avec un risque faible |
-  | Stars post-pic en repli | 203 (14.4 %) | ≈ 14.7 M€ | -7.0 M€ | Le plus pénalisé par l'âge/l'éloignement du pic ; à éviter si l'objectif est la plus-value |
-  | Superstars en forte hausse | 96 (6.8 %) | ≈ 68.3 M€ | +12.1 M€ | Amplitude forte de la valeur marchande passée ; objetif de performance immédiate |
 
 ## Interface finale de prédiction
 
