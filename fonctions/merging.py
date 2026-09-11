@@ -83,12 +83,7 @@ def prepare_transfermarkt_data(df_players, df_valuations):
         dataframe: dataframe Transfermarkt nettoyé
     """
 
-    df_tm = pd.merge(
-        df_players,
-        df_valuations,
-        on="player_id",
-        how="left"
-    )
+    df_tm = pd.merge(df_players, df_valuations, on="player_id", how="left")
 
     df_tm = df_tm.rename(columns={
         "market_value_in_eur_y": "market_value_in_eur"
