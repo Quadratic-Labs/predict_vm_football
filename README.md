@@ -29,7 +29,7 @@ Ce projet a été développé dans le cadre d'un stage. Il vise à construire un
 
 ## Prérequis
 
-- Python 3 (recommandé : 3.10+)
+- Python 3.14.3
 - PowerShell (pour l'exécution du script `install.ps1`)
 - Un compte [Kaggle](https://www.kaggle.com) (clé API configurée) pour télécharger les datasets Transfermarkt et FIFA ranking
 
